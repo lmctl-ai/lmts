@@ -10,7 +10,7 @@
  *   --no-k               boolean false (boolean / json params)
  *   --k a --k b          accumulates for occurs '+'/'*' or type 'array'
  *   --                   ends flag parsing; the rest are positionals
- * @module @gitpoc/clischema/argv-form
+ * @module @lmctl-ai/lmts/argv-form
  */
 
 import type { OperationSchema, ParamSpec, Result, ValidationIssue } from './types.js';

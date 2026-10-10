@@ -1,7 +1,7 @@
 /**
  * @fileoverview Generate help text from a declared OperationSchema. The
  * schema is the single source of truth; help is derived, never hand-written.
- * @module @gitpoc/clischema/help
+ * @module @lmctl-ai/lmts/help
  */
 
 import type { OperationSchema, ParamSpec } from './types.js';

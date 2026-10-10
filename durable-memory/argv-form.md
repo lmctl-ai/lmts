@@ -1,4 +1,4 @@
-# @gitpoc/clischema — Array-Based Argv Form (`argv-form.ts`)
+# @lmctl-ai/lmts — Array-Based Argv Form (`argv-form.ts`)
 
 Array-based command-line parsing without external parser generators or string re-serialization.
 

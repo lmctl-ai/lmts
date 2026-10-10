@@ -2,7 +2,7 @@
  * @fileoverview Standardized error codes and error class for the CLI wrappers.
  * Adapted (simplified) from git-mcp-server src/types-global/errors.ts:
  * MCP/JSON-RPC naming replaced with CLI-oriented naming, zod schema dropped.
- * @module @gitpoc/clischema/server/errors
+ * @module @lmctl-ai/lmts/server/errors
  */
 
 /**

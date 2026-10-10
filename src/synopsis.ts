@@ -1,6 +1,6 @@
 /**
  * @fileoverview Pure string formatting helpers for parameter synopses and CLI usage lines.
- * @module @gitpoc/clischema/synopsis
+ * @module @lmctl-ai/lmts/synopsis
  */
 
 import type { OperationSchema, ParamSpec } from './types.js';

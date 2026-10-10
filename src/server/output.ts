@@ -4,7 +4,7 @@
  * Success responses print the operation result as a single JSON document.
  * Errors print a structured error envelope to stdout (never plain stderr
  * text, so callers never scrape logs) and set a non-zero exit code.
- * @module @gitpoc/clischema/server/output
+ * @module @lmctl-ai/lmts/server/output
  */
 
 import { CliError, toCliError } from './errors.js';

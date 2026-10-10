@@ -10,9 +10,9 @@
     "skipLibCheck": true,
     "noEmit": true,
     "paths": {
-      "@gitpoc/clischema": ["./src/index.ts"],
-      "@gitpoc/clischema/validate": ["./src/validate-entry.ts"],
-      "@gitpoc/clischema/server": ["./src/server/index.ts"]
+      "@lmctl-ai/lmts": ["./src/index.ts"],
+      "@lmctl-ai/lmts/validate": ["./src/validate-entry.ts"],
+      "@lmctl-ai/lmts/server": ["./src/server/index.ts"]
     }
   },
   "include": [

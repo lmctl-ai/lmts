@@ -1,14 +1,29 @@
-# @gitpoc/clischema
+# @lmctl-ai/lmts
 
-Schema-driven CLI tooling providing declarative schema validation and a standard CLI server runtime.
+Schema-driven CLI tooling providing declarative schema validation, LLM command interpretation, and a standard CLI server runtime for `cli.schema.v1`.
+
+## Installation
+
+```bash
+npm install git+https://github.com/lmctl-ai/lmts.git#v0.1.0
+# or with Bun
+bun add git+https://github.com/lmctl-ai/lmts.git#v0.1.0
+```
+
+### Node.js vs. Bun Runtime Resolution
+
+- **Bun**: Uses the `"bun"` condition in `package.json` `exports` to execute directly from TypeScript sources (`src/`).
+- **Node.js**: Plain Node.js cannot strip or transpile TypeScript inside `node_modules` and resolves to the pre-compiled JavaScript and `.d.ts` declarations in `dist/` via the `"default"` condition.
+- **Committed `dist/`**: The `dist/` directory is committed to git so git-based dependencies (`git+https://...`) work out of the box in plain Node environments without requiring a post-install build step. Whenever source files in `src/` are modified, `dist/` must be rebuilt (`bun run build`) and committed.
 
 ## Overview
 
-Tools built with `@gitpoc/clischema` act as structured CLI servers that publish machine-readable schema contracts for consumption by software clients, agent runtimes, and LLMs, while deriving human-friendly `--help` output automatically.
+Tools built with `@lmctl-ai/lmts` act as structured CLI servers that publish machine-readable schema contracts for consumption by software clients, agent runtimes, and LLMs, while deriving human-friendly `--help` output automatically.
 
-The package provides two primary entry points:
-- **`@gitpoc/clischema/validate` (Client-side)**: A pure, lightweight validation engine with zero runtime dependencies. Re-exports `validate()`, parameter and operation types, serializers (`encodeArgv`, `encodeJson`, `encodeGraphql`), and document publishing/parsing helpers.
-- **`@gitpoc/clischema/server` (Server-side)**: A complete CLI runner (`runCli`), policy engine (`checkPolicy`), cross-runtime process execution (`spawnCommand`), and structured error envelope generator.
+The package provides three primary entry points:
+- **`@lmctl-ai/lmts` (Main / Client-side)**: Full pure client SDK including `validate()`, `parsePublishedSchema()`, `publishSchema()`, command tokenizer (`tokenizeSimpleCommand`), interpreter (`interpretCommand`), operation classifier (`classifyOperation`), prompt formatter (`describeForPrompt`), and serializers (`encodeArgv`, `encodeJson`, `encodeGraphql`).
+- **`@lmctl-ai/lmts/validate` (Lightweight Validator)**: A pure, lightweight validation engine with minimal transitive dependency closure. Re-exports `validate()`, parameter and operation types, serializers, and document publishing/parsing helpers (excluding argv and GraphQL parsers).
+- **`@lmctl-ai/lmts/server` (Server-side)**: A complete CLI runner (`runCli`), policy engine (`checkPolicy`), cross-runtime process execution (`spawnCommand`), and structured error envelope generator.
 
 ## Three Input Forms
 

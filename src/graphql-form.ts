@@ -7,7 +7,7 @@
  *
  * The selection set is ignored; only the arguments are validated against the
  * op's schema. Variables and named operations are rejected.
- * @module @gitpoc/clischema/graphql-form
+ * @module @lmctl-ai/lmts/graphql-form
  */
 
 import type { OperationSchema, Result, ValidationIssue, ValidationIssueCode } from './types.js';

@@ -18,7 +18,7 @@
  *   --input-file <path>
  *
  * Values arriving on the CLI are parsed against the op's schema.
- * @module @gitpoc/clischema/server/cli
+ * @module @lmctl-ai/lmts/server/cli
  */
 
 import { readFileSync } from 'node:fs';

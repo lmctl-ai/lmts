@@ -1,6 +1,6 @@
 /**
  * @fileoverview Public surface of the input-schema package.
- * @module @gitpoc/clischema
+ * @module @lmctl-ai/lmts
  */
 export * from './types.js';
 export * from './synopsis.js';

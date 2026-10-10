@@ -1,6 +1,6 @@
 /**
  * @fileoverview Operation definition types for CLI servers.
- * @module @gitpoc/clischema/server/types
+ * @module @lmctl-ai/lmts/server/types
  */
 
 import type { OperationSchema } from '../types.js';

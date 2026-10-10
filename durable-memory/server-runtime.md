@@ -1,4 +1,4 @@
-# @gitpoc/clischema/server — CLI runner (`cli.ts`)
+# @lmctl-ai/lmts/server — CLI runner (`cli.ts`)
 
 Execution flow in `runCli(config, argv)`:
 
@@ -16,7 +16,7 @@ Execution flow in `runCli(config, argv)`:
 3. **Operation Dispatch**:
    - The identified operation token is extracted as `opName`, and remaining argv tokens are passed to input resolution.
    - Unknown operation -> `CliError(INVALID_REQUEST)` with hint to `--list`.
-4. **Input Resolution via `@gitpoc/clischema`**:
+4. **Input Resolution via `@lmctl-ai/lmts`**:
    - Resolves input via `resolveInput({ schema, argv, jsonDocument, graphqlDocument, globals: GLOBAL_FLAGS })`.
    - File inputs (`--input-file`) are loaded with static `readFileSync`.
    - Document inputs allow global flags (`--dryrun`, `--readonly`, `--confirm`) but strictly reject mixing with operation flags (`MIXED_INPUT`). Unrelated flag parse failures are reported as validation errors rather than `MIXED_INPUT`.
@@ -38,5 +38,5 @@ Execution flow in `runCli(config, argv)`:
 
 ## Invariants
 
-- Static ESM imports only: `@gitpoc/clischema` and `node:fs` are statically imported; no dynamic runtime `await import()`.
+- Static ESM imports only: `@lmctl-ai/lmts` and `node:fs` are statically imported; no dynamic runtime `await import()`.
 - Global flags are declared centrally in `GLOBAL_FLAGS: ParamSpec[]` exported by the server runtime (`src/server/cli.ts`).

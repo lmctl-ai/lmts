@@ -8,7 +8,7 @@
  *   - dry-run: NOT executed. A successful synthetic DryRunResult is returned,
  *     including the command that would have run (when available).
  *   - read-only mode: execution aborts with a ReadOnlyViolation error.
- * @module @gitpoc/clischema/server/policy
+ * @module @lmctl-ai/lmts/server/policy
  */
 
 import { CliError, ErrorCode } from './errors.js';

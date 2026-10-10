@@ -4,7 +4,7 @@
  * it, validate input against it, and generate documentation from it.
  *
  * Document version: cli.schema.v1
- * @module @gitpoc/clischema/publish
+ * @module @lmctl-ai/lmts/publish
  */
 
 import type {

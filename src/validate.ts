@@ -1,7 +1,7 @@
 /**
  * @fileoverview Schema validation core. Validates raw input records against an OperationSchema,
  * collecting all issues, applying defaults, enforcing types, enums, occurrences, and form constraints.
- * @module @gitpoc/clischema/validate
+ * @module @lmctl-ai/lmts/validate
  */
 
 import type {

@@ -1,6 +1,6 @@
 /**
  * @fileoverview Type definitions for CLI schemas, parameters, and validation.
- * @module @gitpoc/clischema/types
+ * @module @lmctl-ai/lmts/types
  */
 
 export type ParamType = 'string' | 'number' | 'boolean' | 'object' | 'array' | 'json';

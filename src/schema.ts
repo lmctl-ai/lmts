@@ -4,7 +4,7 @@
  * One schema, three input forms: command-line flags, a JSON document, and a
  * GraphQL-style request document. Each op declares its full parameter shape
  * here; the runtime validates every input form against that declaration.
- * @module @gitpoc/clischema/schema
+ * @module @lmctl-ai/lmts/schema
  */
 
 export type { ParamType, ParamOccurs, ParamSpec, OperationSchema } from './types.js';

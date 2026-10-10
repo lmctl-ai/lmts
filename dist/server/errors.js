@@ -1,0 +1,78 @@
+/**
+ * @fileoverview Standardized error codes and error class for the CLI wrappers.
+ * Adapted (simplified) from git-mcp-server src/types-global/errors.ts:
+ * MCP/JSON-RPC naming replaced with CLI-oriented naming, zod schema dropped.
+ * @module @lmctl-ai/lmts/server/errors
+ */
+/**
+ * Standard error codes surfaced in structured error envelopes.
+ * Values are stable strings so callers never depend on numeric codes.
+ */
+export var ErrorCode;
+(function (ErrorCode) {
+    ErrorCode["InvalidRequest"] = "INVALID_REQUEST";
+    ErrorCode["ValidationError"] = "VALIDATION_ERROR";
+    ErrorCode["NotFound"] = "NOT_FOUND";
+    ErrorCode["Conflict"] = "CONFLICT";
+    ErrorCode["Forbidden"] = "FORBIDDEN";
+    ErrorCode["Timeout"] = "TIMEOUT";
+    ErrorCode["ReadOnlyViolation"] = "READONLY_VIOLATION";
+    ErrorCode["InternalError"] = "INTERNAL_ERROR";
+    ErrorCode["ServiceUnavailable"] = "SERVICE_UNAVAILABLE";
+    ErrorCode["CommandFailed"] = "COMMAND_FAILED";
+    ErrorCode["CommandNotFound"] = "COMMAND_NOT_FOUND";
+    ErrorCode["MissingConfirmation"] = "MISSING_CONFIRMATION";
+    ErrorCode["ParseError"] = "PARSE_ERROR";
+    ErrorCode["UnknownError"] = "UNKNOWN_ERROR";
+})(ErrorCode || (ErrorCode = {}));
+/** Map error codes to process exit codes. */
+export const EXIT_CODES = {
+    [ErrorCode.InvalidRequest]: 2,
+    [ErrorCode.ValidationError]: 2,
+    [ErrorCode.NotFound]: 4,
+    [ErrorCode.Conflict]: 5,
+    [ErrorCode.Forbidden]: 6,
+    [ErrorCode.ReadOnlyViolation]: 6,
+    [ErrorCode.Timeout]: 7,
+    [ErrorCode.InternalError]: 1,
+    [ErrorCode.ServiceUnavailable]: 8,
+    [ErrorCode.CommandFailed]: 1,
+    [ErrorCode.CommandNotFound]: 127,
+    [ErrorCode.MissingConfirmation]: 9,
+    [ErrorCode.ParseError]: 3,
+    [ErrorCode.UnknownError]: 1,
+};
+/**
+ * Structured error thrown by all operations. The CLI runner converts it
+ * into a JSON error envelope on stdout and a non-zero exit code.
+ */
+export class CliError extends Error {
+    code;
+    data;
+    exitCode;
+    constructor(code, message, data, options) {
+        super(message, options);
+        this.name = 'CliError';
+        this.code = code;
+        if (data) {
+            this.data = data;
+        }
+        this.exitCode = EXIT_CODES[code] ?? 1;
+        Object.setPrototypeOf(this, CliError.prototype);
+        if (Error.captureStackTrace) {
+            Error.captureStackTrace(this, CliError);
+        }
+    }
+}
+/** Convert any thrown value into a CliError. */
+export function toCliError(error, fallbackMessage = 'Unknown error') {
+    if (error instanceof CliError) {
+        return error;
+    }
+    if (error instanceof Error) {
+        return new CliError(ErrorCode.UnknownError, error.message || fallbackMessage, undefined, {
+            cause: error,
+        });
+    }
+    return new CliError(ErrorCode.UnknownError, String(error) || fallbackMessage);
+}

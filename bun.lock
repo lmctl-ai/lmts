@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "@gitpoc/clischema",
+      "name": "@lmctl-ai/lmts",
       "dependencies": {
         "cross-spawn": "^7.0.6",
       },

@@ -1,6 +1,6 @@
 /**
  * @fileoverview Server runtime and CLI runner.
- * @module @gitpoc/clischema/server
+ * @module @lmctl-ai/lmts/server
  */
 
 export * from './errors.js';

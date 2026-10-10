@@ -1,4 +1,4 @@
-# @gitpoc/clischema/server — policy model
+# @lmctl-ai/lmts/server — policy model
 
 State per invocation:
 ```ts

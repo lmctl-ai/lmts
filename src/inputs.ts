@@ -7,7 +7,7 @@
  *
  * Documented inputs and CLI flags cannot be mixed on a single invocation
  * (enforced here).
- * @module @gitpoc/clischema/inputs
+ * @module @lmctl-ai/lmts/inputs
  */
 
 import type { OperationSchema, ParamSpec, ValidationIssue } from './types.js';

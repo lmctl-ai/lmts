@@ -1,4 +1,4 @@
-# @gitpoc/clischema — durable memory
+# @lmctl-ai/lmts — durable memory
 
 Portable knowledge for the schema package and server runtime. Read this, then `./argv-form.md` for array-based flag parser rules, `./server-runtime.md` for the CLI runner, and `./policy.md` for policy gating.
 
@@ -40,9 +40,9 @@ Cardinality is regex-style and nothing finer:
 
 ## The `./validate` Entry & `dist/`
 
-- `@gitpoc/clischema/validate` is the lightweight consumer-facing entry point re-exporting `validate()`, `types.ts`, `schema.ts`, `json-form.ts`, `publish.ts`, `help.ts`, and `encode.ts`.
+- `@lmctl-ai/lmts/validate` is the lightweight consumer-facing entry point re-exporting `validate()`, `types.ts`, `schema.ts`, `json-form.ts`, `publish.ts`, `help.ts`, and `encode.ts`.
 - Its transitive import closure excludes the CLI-specific argv parser (`argv-form.ts`), GraphQL parser (`graphql-form.ts`), and `inputs.ts`.
-- The `dist/` directory contains compiled JavaScript and TypeScript declarations (`.d.ts`) so Node.js consumers (such as `lmscript`) can import `@gitpoc/clischema/validate` without requiring a Bun-specific runtime.
+- The `dist/` directory contains compiled JavaScript and TypeScript declarations (`.d.ts`) so Node.js consumers (such as `lmscript`) can import `@lmctl-ai/lmts/validate` without requiring a Bun-specific runtime.
 
 ## Encoders & Round-Trip
 
@@ -77,4 +77,21 @@ Round-trip tested against server-side parsers to guarantee client-encoded inputs
 
 The formal protocol specification (`protocol.md`), JSON Schema (`cli.schema.v1.schema.json`), and language-neutral conformance test vectors live in the `lmapi` repository ([github.com/lmctl-ai/lmapi](https://github.com/lmctl-ai/lmapi)).
 `lmts` validates against these conformance vectors via `tests/conformance.test.ts` (which cleanly skips when `lmapi` is not present).
+
+## Committed `dist/` & Git Dependency Support
+
+- The `dist/` directory is committed to git so plain Node.js consumers can install `@lmctl-ai/lmts` directly as a git dependency (`"git+https://github.com/lmctl-ai/lmts.git#v0.1.0"`).
+- Node.js cannot strip or compile TypeScript types from packages within `node_modules` and resolves to `./dist/index.js` or `./dist/validate-entry.js` via the `exports` configuration.
+- To avoid sourcemap discrepancies across build environments, `declarationMap` and `sourceMap` are disabled in `tsconfig.build.json`.
+- `tests/dist-fresh.test.ts` enforces that committed `dist/` matches a fresh build byte-for-byte.
+
+## Release Procedure
+
+To cut a new release tag (e.g. `v0.1.0`):
+1. Run `bun run build` to compile `dist/`.
+2. Run `bun test` to ensure all tests (including `tests/dist-fresh.test.ts` and `tests/node-import.test.ts`) pass.
+3. Verify with `git status` that any changes in `dist/` and `src/` are staged.
+4. Commit the changes: `git commit -m "release: v0.1.0"`.
+5. Tag the commit: `git tag v0.1.0`.
+6. Push commits and tags: `git push origin main --tags`.
 

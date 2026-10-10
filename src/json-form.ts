@@ -2,7 +2,7 @@
  * @fileoverview JSON input form. Accepts either a raw JSON object mapping
  * param names to values, or an envelope { op, params }. Always validated
  * against the op's schema.
- * @module @gitpoc/clischema/json-form
+ * @module @lmctl-ai/lmts/json-form
  */
 
 import type { OperationSchema, Result, ValidationIssue } from './types.js';

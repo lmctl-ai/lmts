@@ -7,7 +7,7 @@
  * Limitations of the argv form: an empty array cannot be expressed (it is
  * omitted), and a 'json'-typed param holding a string that looks like a
  * literal (e.g. "true", "12") is re-read as that literal.
- * @module @gitpoc/clischema/encode
+ * @module @lmctl-ai/lmts/encode
  */
 
 import type { OperationSchema, ParamSpec } from './types.js';

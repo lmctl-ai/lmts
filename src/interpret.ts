@@ -4,7 +4,7 @@
  * effect classification ('read' | 'effectful'), and compact LLM prompt generation.
  *
  * PURE SDK module: zero external dependencies, no Node or process globals.
- * @module @gitpoc/clischema/interpret
+ * @module @lmctl-ai/lmts/interpret
  */
 
 import type {

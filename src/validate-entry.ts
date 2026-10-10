@@ -1,6 +1,6 @@
 /**
  * @fileoverview Validate-only entry point (lightweight validation closure, no argv/GraphQL parser).
- * @module @gitpoc/clischema/validate
+ * @module @lmctl-ai/lmts/validate
  */
 
 export * from './types.js';

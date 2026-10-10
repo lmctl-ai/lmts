@@ -4,7 +4,7 @@
  * src/services/git/providers/cli/utils/runtime-adapter.ts and generalized so
  * the spawned binary and default environment are parameters instead of being
  * hard-wired to git.
- * @module @gitpoc/clischema/server/exec
+ * @module @lmctl-ai/lmts/server/exec
  */
 
 import spawn from 'cross-spawn';
