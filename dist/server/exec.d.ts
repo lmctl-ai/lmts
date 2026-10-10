@@ -33,6 +33,8 @@ export interface ExecOptions {
 }
 /** Detects the current JavaScript runtime. */
 export declare function detectRuntime(): 'bun' | 'node';
+export declare function spawnWithBun(command: string, args: string[], cwd: string, env: Record<string, string>, timeout: number, signal?: AbortSignal, allowNonZeroExit?: boolean): Promise<ExecResult>;
+export declare function spawnWithNode(command: string, args: string[], cwd: string, env: Record<string, string>, timeout: number, signal?: AbortSignal, allowNonZeroExit?: boolean): Promise<ExecResult>;
 /**
  * Spawns a command using the optimal method for the current runtime
  * (Bun.spawn in Bun, child_process spawn via cross-spawn in Node).
@@ -40,4 +42,4 @@ export declare function detectRuntime(): 'bun' | 'node';
  * Arguments are always passed as an array (no shell), so shell-metacharacter
  * injection is impossible by construction.
  */
-export declare function spawnCommand(command: string, args: string[], cwd: string, env: Record<string, string>, timeout?: number, signal?: AbortSignal, allowNonZeroExit?: boolean): Promise<ExecResult>;
+export declare function spawnCommand(command: string, args: string[], cwd: string, env: Record<string, string>, timeout?: number, signal?: AbortSignal, allowNonZeroExit?: boolean, runtimeOverride?: 'bun' | 'node'): Promise<ExecResult>;

@@ -17,7 +17,7 @@ export function detectRuntime() {
     }
     return 'node';
 }
-async function spawnWithBun(command, args, cwd, env, timeout, signal, allowNonZeroExit = false) {
+export async function spawnWithBun(command, args, cwd, env, timeout, signal, allowNonZeroExit = false) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const bunApi = globalThis.Bun;
     if (signal?.aborted) {
@@ -58,7 +58,7 @@ async function spawnWithBun(command, args, cwd, env, timeout, signal, allowNonZe
     }
     return { stdout, stderr, exitCode };
 }
-async function spawnWithNode(command, args, cwd, env, timeout, signal, allowNonZeroExit = false) {
+export async function spawnWithNode(command, args, cwd, env, timeout, signal, allowNonZeroExit = false) {
     return new Promise((resolve, reject) => {
         if (signal?.aborted) {
             reject(new Error(`Command cancelled before execution: ${command} ${args.join(' ')}`));
@@ -124,8 +124,8 @@ async function spawnWithNode(command, args, cwd, env, timeout, signal, allowNonZ
  * Arguments are always passed as an array (no shell), so shell-metacharacter
  * injection is impossible by construction.
  */
-export async function spawnCommand(command, args, cwd, env, timeout = 60000, signal, allowNonZeroExit = false) {
-    const runtime = detectRuntime();
+export async function spawnCommand(command, args, cwd, env, timeout = 60000, signal, allowNonZeroExit = false, runtimeOverride) {
+    const runtime = runtimeOverride ?? detectRuntime();
     if (runtime === 'bun') {
         return spawnWithBun(command, args, cwd, env, timeout, signal, allowNonZeroExit);
     }

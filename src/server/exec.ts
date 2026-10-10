@@ -75,7 +75,7 @@ export function detectRuntime(): 'bun' | 'node' {
   return 'node';
 }
 
-async function spawnWithBun(
+export async function spawnWithBun(
   command: string,
   args: string[],
   cwd: string,
@@ -146,7 +146,7 @@ async function spawnWithBun(
   return { stdout, stderr, exitCode };
 }
 
-async function spawnWithNode(
+export async function spawnWithNode(
   command: string,
   args: string[],
   cwd: string,
@@ -248,8 +248,9 @@ export async function spawnCommand(
   timeout = 60000,
   signal?: AbortSignal,
   allowNonZeroExit = false,
+  runtimeOverride?: 'bun' | 'node',
 ): Promise<ExecResult> {
-  const runtime = detectRuntime();
+  const runtime = runtimeOverride ?? detectRuntime();
 
   if (runtime === 'bun') {
     return spawnWithBun(command, args, cwd, env, timeout, signal, allowNonZeroExit);

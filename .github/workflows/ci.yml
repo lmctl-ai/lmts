@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test & Build (Bun)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: lmts
+    steps:
+      - name: Checkout lmts
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          path: lmts
+
+      - name: Checkout lmapi sibling for conformance vectors
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: lmctl-ai/lmapi
+          path: lmapi
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@4bc047ad259df6fc24a6c9b0f9a0cb08cf17fbe5 # v2.0.1
+        with:
+          bun-version: 1.4.2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bunx tsc --noEmit
+
+      # Run directly (no pipe) so bun's exit code is the step's result; the conformance
+      # suite itself fails in CI when the lmapi checkout is missing.
+      - name: Run tests with coverage
+        run: bun test --coverage
+
+      - name: Build dist
+        run: bun run build
+
+      - name: Verify dist freshness
+        run: git diff --exit-code -- dist
+
+  node-compat:
+    name: Node Compatibility (Node ${{ matrix.node-version }})
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [20, 22]
+    steps:
+      - name: Checkout lmts
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node ${{ matrix.node-version }}
+        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.2.0
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Verify exports load in vanilla Node
+        run: |
+          node -e "import('./dist/index.js')"
+          node -e "import('./dist/validate-entry.js')"
+          node -e "import('./dist/server/index.js')"
+          node -e "import('./dist/argv-form.js')"
+          node -e "import('./dist/json-form.js')"
+          node -e "import('./dist/graphql-form.js')"

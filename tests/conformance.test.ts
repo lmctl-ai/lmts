@@ -22,7 +22,14 @@ const hasConformance = existsSync(CONFORMANCE_DIR);
 
 describe('conformance vectors (lmapi)', () => {
   if (!hasConformance) {
-    test.skip('Skipping conformance suite: ../lmapi/conformance directory not found', () => {});
+    if (process.env.GITHUB_ACTIONS === 'true') {
+      // In CI a missing lmapi checkout must fail the run, never silently skip the vectors.
+      test('lmapi conformance vectors are checked out next to lmts', () => {
+        throw new Error('../lmapi/conformance not found: check out lmctl-ai/lmapi beside lmts in the workflow');
+      });
+    } else {
+      test.skip('Skipping conformance suite: ../lmapi/conformance directory not found', () => {});
+    }
     return;
   }
 
