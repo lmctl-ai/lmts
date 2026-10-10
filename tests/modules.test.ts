@@ -1082,6 +1082,20 @@ describe('Module Store: edge cases and failure paths', () => {
     expect(resAll.code).toBe('PATH_TRAVERSAL');
   });
 
+  test('remove with allChannels refuses hand-built "." / ".." segments (never deletes github.com)', async () => {
+    const fetchImpl = createMockFetch(() => new Response(JSON.stringify(VALID_SCHEMA_V1)));
+    await install('@owner/repo', { root: tempRoot, fetchImpl });
+    const kept = join(tempRoot, 'github.com', 'owner', 'repo', 'latest');
+    for (const [owner, repo] of [['.', '.'], ['owner', '..'], ['.', 'repo']] as const) {
+      const spec: ModuleSpec = { owner, repo, channel: 'latest', key: `@${owner}/${repo}#latest`, requested: `@${owner}/${repo}` };
+      const res = await remove(spec, { root: tempRoot, allChannels: true });
+      expect(res.ok).toBe(false);
+      if (res.ok) return;
+      expect(res.code).toBe('PATH_TRAVERSAL');
+    }
+    expect(existsSync(kept)).toBe(true);
+  });
+
   test('list ignores non-directory files inside github.com tree', async () => {
     const ghDir = join(tempRoot, 'github.com');
     mkdirSync(ghDir, { recursive: true });

@@ -293,4 +293,17 @@ describe('server/exec', () => {
     }
     expect(threwNotFound).toBe(true);
   });
+
+  test('spawnWithNode reports 128 + signal for a child killed by a signal (not 0)', async () => {
+    const res = await spawnWithNode('/bin/sh', ['-c', 'kill -9 $$'], process.cwd(), {}, 5000, undefined, true);
+    expect(res.exitCode).toBe(137);
+
+    let message = '';
+    try {
+      await spawnWithNode('/bin/sh', ['-c', 'kill -TERM $$'], process.cwd(), {}, 5000);
+    } catch (err) {
+      message = (err as Error).message;
+    }
+    expect(message).toContain('Exit Code: 143');
+  });
 });

@@ -32,6 +32,7 @@ import {
 } from './types.js';
 
 const GITHUB_RAW_BASE = 'https://raw.githubusercontent.com';
+const SEGMENT_REGEX = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const MAX_SCHEMA_BYTES = 2 * 1024 * 1024; // 2 MiB default cap
 
 function normalizeSpec(spec: ModuleSpec | string): Result<ModuleSpec> {
@@ -875,6 +876,13 @@ export async function remove(
   const absRoot = resolve(root);
 
   if (allChannels) {
+    // Hand-built specs bypass parseSpec: refuse names it would reject, so "." / ".." can never
+    // resolve to github.com itself (or the owner directory) and delete every cached module.
+    for (const segment of [parsedSpec.owner, parsedSpec.repo]) {
+      if (!SEGMENT_REGEX.test(segment) || segment === '.' || segment === '..') {
+        return err('PATH_TRAVERSAL', `Invalid owner or repo name "${segment}" in ${parsedSpec.key}`);
+      }
+    }
     const ghRoot = resolve(absRoot, 'github.com');
     const repoDir = resolve(ghRoot, parsedSpec.owner, parsedSpec.repo);
     const relRoot = relative(absRoot, repoDir);

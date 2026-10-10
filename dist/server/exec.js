@@ -6,6 +6,7 @@
  * hard-wired to git.
  * @module @lmctl-ai/lmts/server/exec
  */
+import { constants as osConstants } from 'node:os';
 import spawn from 'cross-spawn';
 /** Detects the current JavaScript runtime. */
 export function detectRuntime() {
@@ -99,14 +100,15 @@ export async function spawnWithNode(command, args, cwd, env, timeout, signal, al
             }
             reject(error);
         });
-        proc.on('close', (exitCode) => {
+        proc.on('close', (exitCode, signalName) => {
             clearTimeout(timeoutHandle);
             if (signal) {
                 signal.removeEventListener('abort', abortHandler);
             }
             const stdout = Buffer.concat(stdoutChunks).toString('utf-8');
             const stderr = Buffer.concat(stderrChunks).toString('utf-8');
-            const code = exitCode ?? 0;
+            // A child killed by a signal has no exit code: report 128 + signal, never 0.
+            const code = exitCode ?? (signalName ? 128 + (osConstants.signals[signalName] ?? 0) : 0);
             if (code !== 0 && !allowNonZeroExit) {
                 const combinedOutput = `Exit Code: ${code}\nStderr: ${stderr}\nStdout: ${stdout}`;
                 reject(new Error(combinedOutput));
