@@ -39,5 +39,10 @@
     "@types/cross-spawn": "^6.0.6",
     "@types/node": "^22.0.0",
     "typescript": "^5.0.0"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lmctl-ai/lmts.git"
   }
 }

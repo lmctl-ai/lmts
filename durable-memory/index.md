@@ -73,3 +73,8 @@ Round-trip tested against server-side parsers to guarantee client-encoded inputs
 - Internal object assembly and intermediate dictionaries (including `encodeJson`) use `Object.create(null)` or `Map`.
 - Hostile inputs attempting to supply `__proto__`, `constructor`, or `prototype` keys are rejected as `UNKNOWN_PARAM` (or `RESERVED_NAME`) across all three input forms, and `Object.prototype` remains completely unpolluted (`({}).polluted === undefined`).
 
+## Protocol Specification and Conformance Vectors
+
+The formal protocol specification (`protocol.md`), JSON Schema (`cli.schema.v1.schema.json`), and language-neutral conformance test vectors live in the `lmapi` repository ([github.com/lmctl-ai/lmapi](https://github.com/lmctl-ai/lmapi)).
+`lmts` validates against these conformance vectors via `tests/conformance.test.ts` (which cleanly skips when `lmapi` is not present).
+
