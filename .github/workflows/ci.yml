@@ -81,6 +81,7 @@ jobs:
           node -e "import('./dist/index.js')"
           node -e "import('./dist/validate-entry.js')"
           node -e "import('./dist/server/index.js')"
+          node -e "import('./dist/modules/index.js')"
           node -e "import('./dist/argv-form.js')"
           node -e "import('./dist/json-form.js')"
           node -e "import('./dist/graphql-form.js')"

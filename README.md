@@ -5,9 +5,9 @@ Schema-driven CLI tooling providing declarative schema validation, LLM command i
 ## Installation
 
 ```bash
-npm install git+https://github.com/lmctl-ai/lmts.git#v0.1.0
+npm install git+https://github.com/lmctl-ai/lmts.git#v0.2.0
 # or with Bun
-bun add git+https://github.com/lmctl-ai/lmts.git#v0.1.0
+bun add git+https://github.com/lmctl-ai/lmts.git#v0.2.0
 ```
 
 ### Node.js vs. Bun Runtime Resolution
@@ -20,10 +20,12 @@ bun add git+https://github.com/lmctl-ai/lmts.git#v0.1.0
 
 Tools built with `@lmctl-ai/lmts` act as structured CLI servers that publish machine-readable schema contracts for consumption by software clients, agent runtimes, and LLMs, while deriving human-friendly `--help` output automatically.
 
-The package provides three primary entry points:
+The package provides four primary entry points:
 - **`@lmctl-ai/lmts` (Main / Client-side)**: Full pure client SDK including `validate()`, `parsePublishedSchema()`, `publishSchema()`, command tokenizer (`tokenizeSimpleCommand`), interpreter (`interpretCommand`), operation classifier (`classifyOperation`), prompt formatter (`describeForPrompt`), and serializers (`encodeArgv`, `encodeJson`, `encodeGraphql`).
 - **`@lmctl-ai/lmts/validate` (Lightweight Validator)**: A pure, lightweight validation engine with minimal transitive dependency closure. Re-exports `validate()`, parameter and operation types, serializers, and document publishing/parsing helpers (excluding argv and GraphQL parsers).
 - **`@lmctl-ai/lmts/server` (Server-side)**: A complete CLI runner (`runCli`), policy engine (`checkPolicy`), cross-runtime process execution (`spawnCommand`), and structured error envelope generator.
+- **`@lmctl-ai/lmts/modules` (Module Store)**: A Node.js module cache manager that fetches, verifies, and installs remote tool schemas from GitHub (`@owner/repo[#ref]`), handling atomic file storage, checksum verification, immutability, and local PATH discovery.
+
 
 ## Three Input Forms
 
@@ -98,10 +100,62 @@ Any CLI tool implementing the protocol (in TypeScript, Go, Rust, Python, etc.) m
 
 For a complete specification aimed at implementing tools in Go, Rust, or other languages, see [`docs/protocol.md`](docs/protocol.md).
 
+## Module Store
+
+The `@lmctl-ai/lmts/modules` entry point manages locally cached schemas downloaded from GitHub repositories:
+
+```ts
+import {
+  parseSpec,
+  cacheRoot,
+  entryDir,
+  resolveCached,
+  install,
+  list,
+  upgrade,
+  remove,
+  findOnPath,
+} from '@lmctl-ai/lmts/modules';
+
+// Parse module specifier
+const specResult = parseSpec('@lmctl-ai/lmgit#v1.0.0');
+if (specResult.ok) {
+  const spec = specResult.value;
+  console.log(spec.owner, spec.repo, spec.ref, spec.immutable);
+}
+
+// Install or resolve a module
+const installResult = await install('@lmctl-ai/lmgit#v1.0.0');
+if (installResult.ok) {
+  console.log(`Action: ${installResult.value.action}`);
+  console.log(`Schema path: ${installResult.value.entry.path}`);
+  console.log(`Tool: ${installResult.value.entry.tool}`);
+}
+
+// Fast resolution from local cache with SHA-256 verification
+const cached = await resolveCached('@lmctl-ai/lmgit#v1.0.0');
+
+// Upgrade moving refs (immutable tags are skipped safely)
+const upgradeResults = await upgrade();
+
+// Remove from cache
+await remove('@lmctl-ai/lmgit#v1.0.0');
+
+// Check PATH for local CLI binary
+const binaryPath = findOnPath('lmgit');
+```
+
+Key guarantees:
+- **Streaming Byte Cap**: Enforces a 2 MiB limit (`OUTPUT_LIMIT`) on fetched schemas to prevent runaway resource consumption.
+- **Atomic Cache Operations**: Files are staged in temporary files and renamed atomically into place with `0700` directory and `0600` file permissions.
+- **Tamper Detection**: Every cached schema is verified against its recorded SHA-256 hash in `meta.json` before being returned by `resolveCached`.
+- **Path Traversal Protection**: Spec parsing and path resolution strictly forbid directory traversal (`..`) and escape from the cache root.
+
 ## Durable Memory
 
 Further architectural decisions and internal invariants are documented in [`durable-memory/`](durable-memory/):
 - [`durable-memory/index.md`](durable-memory/index.md): Package architecture and client/server framing.
+- [`durable-memory/modules.md`](durable-memory/modules.md): Module Store layout, spec grammar, atomic writes, and error codes.
 - [`durable-memory/interpreter.md`](durable-memory/interpreter.md): Tokenizer grammar, command interpreter, safety classification, and LLM prompt rendering.
 - [`durable-memory/argv-form.md`](durable-memory/argv-form.md): Array-based flag parsing rules and regression controls.
 - [`durable-memory/server-runtime.md`](durable-memory/server-runtime.md): CLI runner execution flow and global dispatch.

@@ -40,12 +40,14 @@ describe('Node.js runtime import smoke tests', () => {
     const mainDist = resolve(ROOT_DIR, 'dist/index.js');
     const validateDist = resolve(ROOT_DIR, 'dist/validate-entry.js');
     const serverDist = resolve(ROOT_DIR, 'dist/server/index.js');
+    const modulesDist = resolve(ROOT_DIR, 'dist/modules/index.js');
 
     const nodeScript = `
 import assert from 'node:assert';
 import * as main from ${JSON.stringify(mainDist)};
 import * as validateEntry from ${JSON.stringify(validateDist)};
 import * as server from ${JSON.stringify(serverDist)};
+import * as modules from ${JSON.stringify(modulesDist)};
 
 // 1. Assert validate entry exports
 assert.strictEqual(typeof validateEntry.validate, 'function', 'validateEntry.validate must be a function');
@@ -62,6 +64,17 @@ assert.strictEqual(typeof main.describeForPrompt, 'function', 'main.describeForP
 assert.strictEqual(typeof server.runCli, 'function', 'server.runCli must be a function');
 assert.strictEqual(typeof server.checkPolicy, 'function', 'server.checkPolicy must be a function');
 assert.strictEqual(typeof server.spawnCommand, 'function', 'server.spawnCommand must be a function');
+
+// 4. Assert modules entry exports
+assert.strictEqual(typeof modules.parseSpec, 'function', 'modules.parseSpec must be a function');
+assert.strictEqual(typeof modules.cacheRoot, 'function', 'modules.cacheRoot must be a function');
+assert.strictEqual(typeof modules.entryDir, 'function', 'modules.entryDir must be a function');
+assert.strictEqual(typeof modules.resolveCached, 'function', 'modules.resolveCached must be a function');
+assert.strictEqual(typeof modules.install, 'function', 'modules.install must be a function');
+assert.strictEqual(typeof modules.list, 'function', 'modules.list must be a function');
+assert.strictEqual(typeof modules.upgrade, 'function', 'modules.upgrade must be a function');
+assert.strictEqual(typeof modules.remove, 'function', 'modules.remove must be a function');
+assert.strictEqual(typeof modules.findOnPath, 'function', 'modules.findOnPath must be a function');
 
 console.log('NODE_IMPORT_OK');
 `;

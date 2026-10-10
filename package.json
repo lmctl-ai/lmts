@@ -1,6 +1,6 @@
 {
   "name": "@lmctl-ai/lmts",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
@@ -20,6 +20,11 @@
       "types": "./dist/server/index.d.ts",
       "bun": "./src/server/index.ts",
       "default": "./dist/server/index.js"
+    },
+    "./modules": {
+      "types": "./dist/modules/index.d.ts",
+      "bun": "./src/modules/index.ts",
+      "default": "./dist/modules/index.js"
     }
   },
   "files": [

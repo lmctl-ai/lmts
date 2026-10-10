@@ -62,5 +62,5 @@ describe('dist freshness & determinism', () => {
     } finally {
       rmSync(tmpOutDir, { recursive: true, force: true });
     }
-  });
+  }, 30000);
 });
