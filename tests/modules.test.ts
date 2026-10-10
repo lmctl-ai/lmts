@@ -1,6 +1,6 @@
 /**
  * @fileoverview Hermetic tests for @lmctl-ai/lmts/modules.
- * Tests spec parsing, cacheRoot, entryDir, resolveCached, install, list,
+ * Tests spec parsing, cacheRoot, entryDir, schemaFileName, resolveCached, install, list,
  * upgrade, remove, findOnPath, atomic writes, tamper detection, and error codes.
  */
 
@@ -19,6 +19,7 @@ import {
   parseSpec,
   remove,
   resolveCached,
+  schemaFileName,
   upgrade,
   type CachedModule,
   type ModuleSpec,
@@ -96,78 +97,85 @@ function mustResolve<T>(res: Result<T>): T {
 }
 
 describe('Module Store: parseSpec', () => {
-  test('parses basic spec @owner/repo with default HEAD', () => {
+  test('parses basic spec @owner/repo with default channel latest and normalized key', () => {
     const res = parseSpec('@lmctl-ai/lmgit');
     expect(res.ok).toBe(true);
     if (!res.ok) return;
     expect(res.value.owner).toBe('lmctl-ai');
     expect(res.value.repo).toBe('lmgit');
-    expect(res.value.ref).toBeUndefined();
-    expect(res.value.refOrHead).toBe('HEAD');
-    expect(res.value.key).toBe('@lmctl-ai/lmgit');
-    expect(res.value.immutable).toBe(false);
+    expect(res.value.channel).toBe('latest');
+    expect(res.value.key).toBe('@lmctl-ai/lmgit#latest');
+    expect(res.value.requested).toBe('@lmctl-ai/lmgit');
   });
 
-  test('parses semver tag as immutable (v1.0.0)', () => {
+  test('parses explicit #latest channel', () => {
+    const res = parseSpec('@lmctl-ai/lmgit#latest');
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.value.owner).toBe('lmctl-ai');
+    expect(res.value.repo).toBe('lmgit');
+    expect(res.value.channel).toBe('latest');
+    expect(res.value.key).toBe('@lmctl-ai/lmgit#latest');
+    expect(res.value.requested).toBe('@lmctl-ai/lmgit#latest');
+  });
+
+  test('parses explicit #dev channel', () => {
+    const res = parseSpec('@lmctl-ai/lmgit#dev');
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.value.owner).toBe('lmctl-ai');
+    expect(res.value.repo).toBe('lmgit');
+    expect(res.value.channel).toBe('dev');
+    expect(res.value.key).toBe('@lmctl-ai/lmgit#dev');
+    expect(res.value.requested).toBe('@lmctl-ai/lmgit#dev');
+  });
+
+  test('rejects tag #v1.0.0 with SPEC_CHANNEL and channel guidance message', () => {
     const res = parseSpec('@lmctl-ai/lmgit#v1.0.0');
-    expect(res.ok).toBe(true);
-    if (!res.ok) return;
-    expect(res.value.ref).toBe('v1.0.0');
-    expect(res.value.immutable).toBe(true);
-    expect(res.value.key).toBe('@lmctl-ai/lmgit#v1.0.0');
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.code).toBe('SPEC_CHANNEL');
+    expect(res.message).toContain('only the latest and dev channels are supported');
   });
 
-  test('parses semver tag without leading v as immutable (1.2.3)', () => {
-    const res = parseSpec('@owner/repo#1.2.3');
-    expect(res.ok).toBe(true);
-    if (!res.ok) return;
-    expect(res.value.immutable).toBe(true);
+  test('rejects branch #main with SPEC_CHANNEL', () => {
+    const res = parseSpec('@lmctl-ai/lmgit#main');
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.code).toBe('SPEC_CHANNEL');
+    expect(res.message).toContain('only the latest and dev channels are supported');
   });
 
-  test('parses semver prerelease metadata as immutable', () => {
-    const res = parseSpec('@owner/repo#v2.1.0-alpha.1');
-    expect(res.ok).toBe(true);
-    if (!res.ok) return;
-    expect(res.value.immutable).toBe(true);
+  test('rejects commit SHA with SPEC_CHANNEL', () => {
+    const res = parseSpec('@lmctl-ai/lmgit#e1613098921f45271c3b7bbcb40f92f6b10beaed');
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.code).toBe('SPEC_CHANNEL');
+    expect(res.message).toContain('only the latest and dev channels are supported');
   });
 
-  test('parses 40 hex char commit sha as immutable', () => {
-    const sha = 'e1613098921f45271c3b7bbcb40f92f6b10beaed';
-    const res = parseSpec(`@owner/repo#${sha}`);
-    expect(res.ok).toBe(true);
-    if (!res.ok) return;
-    expect(res.value.immutable).toBe(true);
+  test('rejects empty channel after hash (@owner/repo#) with SPEC_CHANNEL', () => {
+    const res = parseSpec('@owner/repo#');
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.code).toBe('SPEC_CHANNEL');
+    expect(res.message).toContain('only the latest and dev channels are supported');
   });
 
-  test('parses uppercase 40 hex char commit sha as immutable', () => {
-    const sha = 'E1613098921F45271C3B7BBCB40F92F6B10BEAED';
-    const res = parseSpec(`@owner/repo#${sha}`);
-    expect(res.ok).toBe(true);
-    if (!res.ok) return;
-    expect(res.value.immutable).toBe(true);
+  test('rejects channel with subpaths (@owner/repo#dev/foo) with SPEC_CHANNEL', () => {
+    const res = parseSpec('@owner/repo#dev/foo');
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.code).toBe('SPEC_CHANNEL');
+    expect(res.message).toContain('only the latest and dev channels are supported');
   });
 
-  test('parses branch name "main" as moving (not immutable)', () => {
-    const res = parseSpec('@owner/repo#main');
-    expect(res.ok).toBe(true);
-    if (!res.ok) return;
-    expect(res.value.immutable).toBe(false);
-  });
-
-  test('parses nested branch name "feature/branch-name" as moving', () => {
-    const res = parseSpec('@owner/repo#feature/branch-name');
-    expect(res.ok).toBe(true);
-    if (!res.ok) return;
-    expect(res.value.ref).toBe('feature/branch-name');
-    expect(res.value.refOrHead).toBe('feature/branch-name');
-    expect(res.value.immutable).toBe(false);
-  });
-
-  test('parses deep branch name "releases/2026/q1" as moving', () => {
-    const res = parseSpec('@owner/repo#releases/2026/q1');
-    expect(res.ok).toBe(true);
-    if (!res.ok) return;
-    expect(res.value.immutable).toBe(false);
+  test('rejects traversal in channel (@owner/repo#../../etc) with SPEC_CHANNEL', () => {
+    const res = parseSpec('@owner/repo#../../etc');
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.code).toBe('SPEC_CHANNEL');
+    expect(res.message).toContain('only the latest and dev channels are supported');
   });
 
   test('rejects empty string with SPEC_SYNTAX', () => {
@@ -198,6 +206,34 @@ describe('Module Store: parseSpec', () => {
     expect(res.code).toBe('SPEC_SYNTAX');
   });
 
+  test('rejects empty repo (@owner/) with SPEC_SYNTAX', () => {
+    const res = parseSpec('@owner/');
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.code).toBe('SPEC_SYNTAX');
+  });
+
+  test('rejects empty owner (@/repo) with SPEC_SYNTAX', () => {
+    const res = parseSpec('@/repo');
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.code).toBe('SPEC_SYNTAX');
+  });
+
+  test('rejects path traversal attempt in owner with channel (@../repo#latest) with SPEC_SYNTAX', () => {
+    const res = parseSpec('@../repo#latest');
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.code).toBe('SPEC_SYNTAX');
+  });
+
+  test('rejects illegal characters in owner with channel (@bad$owner/repo#latest) with SPEC_SYNTAX', () => {
+    const res = parseSpec('@bad$owner/repo#latest');
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.code).toBe('SPEC_SYNTAX');
+  });
+
   test('rejects path traversal attempt in owner (@../repo) with SPEC_SYNTAX', () => {
     const res = parseSpec('@../repo');
     expect(res.ok).toBe(false);
@@ -210,62 +246,6 @@ describe('Module Store: parseSpec', () => {
     expect(res.ok).toBe(false);
     if (res.ok) return;
     expect(res.code).toBe('SPEC_SYNTAX');
-  });
-
-  test('rejects empty ref after hash (@owner/repo#) with SPEC_SYNTAX', () => {
-    const res = parseSpec('@owner/repo#');
-    expect(res.ok).toBe(false);
-    if (res.ok) return;
-    expect(res.code).toBe('SPEC_SYNTAX');
-  });
-
-  test('rejects leading slash in ref (@owner/repo#/main) with SPEC_REF', () => {
-    const res = parseSpec('@owner/repo#/main');
-    expect(res.ok).toBe(false);
-    if (res.ok) return;
-    expect(res.code).toBe('SPEC_REF');
-  });
-
-  test('rejects trailing slash in ref (@owner/repo#main/) with SPEC_REF', () => {
-    const res = parseSpec('@owner/repo#main/');
-    expect(res.ok).toBe(false);
-    if (res.ok) return;
-    expect(res.code).toBe('SPEC_REF');
-  });
-
-  test('rejects consecutive slashes in ref (@owner/repo#a//b) with SPEC_REF', () => {
-    const res = parseSpec('@owner/repo#a//b');
-    expect(res.ok).toBe(false);
-    if (res.ok) return;
-    expect(res.code).toBe('SPEC_REF');
-  });
-
-  test('rejects traversal segment ".." in ref (@owner/repo#../../etc) with SPEC_REF', () => {
-    const res = parseSpec('@owner/repo#../../etc');
-    expect(res.ok).toBe(false);
-    if (res.ok) return;
-    expect(res.code).toBe('SPEC_REF');
-  });
-
-  test('rejects traversal segment ".." mid-ref (@owner/repo#a/../b) with SPEC_REF', () => {
-    const res = parseSpec('@owner/repo#a/../b');
-    expect(res.ok).toBe(false);
-    if (res.ok) return;
-    expect(res.code).toBe('SPEC_REF');
-  });
-
-  test('rejects segment "." in ref (@owner/repo#.) with SPEC_REF', () => {
-    const res = parseSpec('@owner/repo#.');
-    expect(res.ok).toBe(false);
-    if (res.ok) return;
-    expect(res.code).toBe('SPEC_REF');
-  });
-
-  test('rejects segment "." mid-ref (@owner/repo#a/./b) with SPEC_REF', () => {
-    const res = parseSpec('@owner/repo#a/./b');
-    expect(res.ok).toBe(false);
-    if (res.ok) return;
-    expect(res.code).toBe('SPEC_REF');
   });
 
   test('rejects illegal characters in owner with SPEC_SYNTAX', () => {
@@ -283,7 +263,7 @@ describe('Module Store: parseSpec', () => {
   });
 });
 
-describe('Module Store: cacheRoot & entryDir', () => {
+describe('Module Store: cacheRoot, entryDir & schemaFileName', () => {
   test('cacheRoot uses LMCTL_HOME when present', () => {
     const root = cacheRoot({ LMCTL_HOME: '/custom/lmctl' });
     expect(root).toBe('/custom/lmctl/modules');
@@ -299,16 +279,21 @@ describe('Module Store: cacheRoot & entryDir', () => {
     expect(root).toBe('/home/testuser/.lmctl/modules');
   });
 
-  test('entryDir formats root/github.com/<owner>/<repo>/<encodedRef>', () => {
-    const spec = mustParse('@owner/repo#feature/v1');
+  test('entryDir formats root/github.com/<owner>/<repo>/<channel>', () => {
+    const spec = mustParse('@owner/repo#dev');
     const dir = entryDir('/cache/root', spec);
-    expect(dir).toBe('/cache/root/github.com/owner/repo/feature%2Fv1');
+    expect(dir).toBe('/cache/root/github.com/owner/repo/dev');
   });
 
-  test('entryDir uses HEAD when ref is omitted', () => {
+  test('entryDir uses latest when channel is omitted', () => {
     const spec = mustParse('@owner/repo');
     const dir = entryDir('/cache/root', spec);
-    expect(dir).toBe('/cache/root/github.com/owner/repo/HEAD');
+    expect(dir).toBe('/cache/root/github.com/owner/repo/latest');
+  });
+
+  test('schemaFileName formats cli.schema.<channel>.json', () => {
+    expect(schemaFileName('latest')).toBe('cli.schema.latest.json');
+    expect(schemaFileName('dev')).toBe('cli.schema.dev.json');
   });
 
   test('entryDir containment check verifies path does not escape root', () => {
@@ -336,7 +321,7 @@ describe('Module Store: resolveCached', () => {
     expect(res.code).toBe('NOT_INSTALLED');
   });
 
-  test('returns NOT_INSTALLED when cli.schema.v1.json is missing', async () => {
+  test('returns NOT_INSTALLED when cli.schema.<channel>.json is missing', async () => {
     const spec = mustParse('@owner/repo');
     const dir = entryDir(tempRoot, spec);
     mkdirSync(dir, { recursive: true });
@@ -352,7 +337,7 @@ describe('Module Store: resolveCached', () => {
     const spec = mustParse('@owner/repo');
     const dir = entryDir(tempRoot, spec);
     mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, 'cli.schema.v1.json'), JSON.stringify(VALID_SCHEMA_V1));
+    writeFileSync(join(dir, schemaFileName(spec.channel)), JSON.stringify(VALID_SCHEMA_V1));
 
     const res = await resolveCached(spec, { root: tempRoot });
     expect(res.ok).toBe(false);
@@ -361,19 +346,19 @@ describe('Module Store: resolveCached', () => {
   });
 
   test('returns CachedModule on valid cached entry with verified hash', async () => {
-    const spec = mustParse('@owner/repo');
+    const spec = mustParse('@owner/repo#dev');
     const dir = entryDir(tempRoot, spec);
     mkdirSync(dir, { recursive: true });
 
     const schemaStr = JSON.stringify(VALID_SCHEMA_V1, null, 2);
     const sha = createHash('sha256').update(schemaStr).digest('hex');
 
-    writeFileSync(join(dir, 'cli.schema.v1.json'), schemaStr);
+    writeFileSync(join(dir, 'cli.schema.dev.json'), schemaStr);
     writeFileSync(
       join(dir, 'meta.json'),
       JSON.stringify({
-        spec: '@owner/repo',
-        url: 'https://raw.githubusercontent.com/owner/repo/HEAD/cli.schema.v1.json',
+        spec: '@owner/repo#dev',
+        url: 'https://raw.githubusercontent.com/owner/repo/HEAD/cli.schema.dev.json',
         sha256: sha,
         fetched_at: '2026-10-10T12:00:00Z',
         tool: 'mytool',
@@ -389,7 +374,7 @@ describe('Module Store: resolveCached', () => {
     expect(res.value.tool).toBe('mytool');
     expect(res.value.version).toBe('1.0.0');
     expect(res.value.document.tool).toBe('mytool');
-    expect(res.value.path).toBe(join(dir, 'cli.schema.v1.json'));
+    expect(res.value.path).toBe(join(dir, 'cli.schema.dev.json'));
   });
 
   test('tamper detection: returns CACHE_CORRUPT naming file when sha mismatch', async () => {
@@ -398,11 +383,11 @@ describe('Module Store: resolveCached', () => {
     mkdirSync(dir, { recursive: true });
 
     const schemaStr = JSON.stringify(VALID_SCHEMA_V1);
-    writeFileSync(join(dir, 'cli.schema.v1.json'), schemaStr + ' // tampered');
+    writeFileSync(join(dir, 'cli.schema.latest.json'), schemaStr + ' // tampered');
     writeFileSync(
       join(dir, 'meta.json'),
       JSON.stringify({
-        spec: '@owner/repo',
+        spec: '@owner/repo#latest',
         sha256: 'original-sha',
         fetched_at: '2026-10-10T12:00:00Z',
       }),
@@ -412,7 +397,7 @@ describe('Module Store: resolveCached', () => {
     expect(res.ok).toBe(false);
     if (res.ok) return;
     expect(res.code).toBe('CACHE_CORRUPT');
-    expect(res.file).toBe(join(dir, 'cli.schema.v1.json'));
+    expect(res.file).toBe(join(dir, 'cli.schema.latest.json'));
   });
 
   test('returns BAD_JSON when cached schema file contains invalid JSON', async () => {
@@ -422,10 +407,10 @@ describe('Module Store: resolveCached', () => {
 
     const corruptedStr = 'not json';
     const sha = createHash('sha256').update(corruptedStr).digest('hex');
-    writeFileSync(join(dir, 'cli.schema.v1.json'), corruptedStr);
+    writeFileSync(join(dir, 'cli.schema.latest.json'), corruptedStr);
     writeFileSync(
       join(dir, 'meta.json'),
-      JSON.stringify({ spec: '@owner/repo', sha256: sha, fetched_at: '2026-10-10T12:00:00Z' }),
+      JSON.stringify({ spec: '@owner/repo#latest', sha256: sha, fetched_at: '2026-10-10T12:00:00Z' }),
     );
 
     const res = await resolveCached(spec, { root: tempRoot });
@@ -443,10 +428,10 @@ describe('Module Store: resolveCached', () => {
     const invalidStr = JSON.stringify(invalidDoc);
     const sha = createHash('sha256').update(invalidStr).digest('hex');
 
-    writeFileSync(join(dir, 'cli.schema.v1.json'), invalidStr);
+    writeFileSync(join(dir, 'cli.schema.latest.json'), invalidStr);
     writeFileSync(
       join(dir, 'meta.json'),
-      JSON.stringify({ spec: '@owner/repo', sha256: sha, fetched_at: '2026-10-10T12:00:00Z' }),
+      JSON.stringify({ spec: '@owner/repo#latest', sha256: sha, fetched_at: '2026-10-10T12:00:00Z' }),
     );
 
     const res = await resolveCached(spec, { root: tempRoot });
@@ -468,7 +453,7 @@ describe('Module Store: install', () => {
   });
 
   test('happy path: installs valid schema with correct directory and file permissions', async () => {
-    const specStr = '@lmctl-ai/mytool#v1.0.0';
+    const specStr = '@lmctl-ai/mytool#dev';
     const fetchImpl = createMockFetch(() => {
       return new Response(JSON.stringify(VALID_SCHEMA_V1, null, 2), { status: 200 });
     });
@@ -487,7 +472,7 @@ describe('Module Store: install', () => {
     expect(res.value.entry.fetchedAt).toBe(fixedDate.toISOString());
 
     const dir = res.value.entry.dir;
-    expect(existsSync(join(dir, 'cli.schema.v1.json'))).toBe(true);
+    expect(existsSync(join(dir, 'cli.schema.dev.json'))).toBe(true);
     expect(existsSync(join(dir, 'meta.json'))).toBe(true);
 
     // Verify permissions on POSIX
@@ -495,7 +480,7 @@ describe('Module Store: install', () => {
       const dirStat = statSync(dir);
       expect(dirStat.mode & 0o777).toBe(0o700);
 
-      const fileStat = statSync(join(dir, 'cli.schema.v1.json'));
+      const fileStat = statSync(join(dir, 'cli.schema.dev.json'));
       expect(fileStat.mode & 0o777).toBe(0o600);
     }
   });
@@ -533,16 +518,16 @@ describe('Module Store: install', () => {
     expect(fetchCount).toBe(2);
   });
 
-  test('404 response returns FETCH_FAILED naming expected path cli.schema.v1.json', async () => {
+  test('404 response returns FETCH_FAILED naming expected path cli.schema.<channel>.json at root of default branch', async () => {
     const fetchImpl = createMockFetch(() => {
       return new Response('Not Found', { status: 404, statusText: 'Not Found' });
     });
 
-    const res = await install('@owner/repo', { root: tempRoot, fetchImpl });
+    const res = await install('@owner/repo#dev', { root: tempRoot, fetchImpl });
     expect(res.ok).toBe(false);
     if (res.ok) return;
-    expect(res.code).toBe('FETCH_FAILED');
-    expect(res.message).toContain('expected cli.schema.v1.json at repository root');
+    expect(res.message).toContain('cli.schema.dev.json');
+    expect(res.message).toContain('root of the default branch');
   });
 
   test('404 response leaves an existing good entry untouched', async () => {
@@ -667,7 +652,7 @@ describe('Module Store: install', () => {
         return new Response(null, {
           status: 302,
           headers: {
-            location: 'https://raw.githubusercontent.com/owner/repo/main/cli.schema.v1.json',
+            location: 'https://raw.githubusercontent.com/owner/repo/main/cli.schema.latest.json',
           },
         });
       }
@@ -713,20 +698,22 @@ describe('Module Store: list', () => {
     expect(entries).toEqual([]);
   });
 
-  test('lists installed entries with spec, tool, version, sha256, dir', async () => {
+  test('lists installed entries with spec, channel, tool, version, sha256, dir, binaryOnPath', async () => {
     const fetchImpl = createMockFetch(() => new Response(JSON.stringify(VALID_SCHEMA_V1)));
-    await install('@owner/repo1#v1.0.0', { root: tempRoot, fetchImpl });
+    await install('@owner/repo1#dev', { root: tempRoot, fetchImpl });
     await install('@owner/repo2', { root: tempRoot, fetchImpl });
 
     const entries = await list({ root: tempRoot });
     expect(entries.length).toBe(2);
-    expect(entries[0]!.spec).toBe('@owner/repo1#v1.0.0');
-    expect(entries[0]!.tool).toBe('mytool');
-    expect(entries[0]!.version).toBe('1.0.0');
-    expect(entries[0]!.immutable).toBe(true);
-
-    expect(entries[1]!.spec).toBe('@owner/repo2');
-    expect(entries[1]!.immutable).toBe(false);
+    const e1 = entries.find((e) => e.spec === '@owner/repo1#dev');
+    const e2 = entries.find((e) => e.spec === '@owner/repo2#latest');
+    expect(e1).toBeDefined();
+    expect(e2).toBeDefined();
+    expect(e1!.channel).toBe('dev');
+    expect(e1!.tool).toBe('mytool');
+    expect(e1!.version).toBe('1.0.0');
+    expect(e1!.binaryOnPath).toBeNull();
+    expect(e2!.channel).toBe('latest');
   });
 
   test('reports corrupt entry directory as a problem row', async () => {
@@ -734,14 +721,14 @@ describe('Module Store: list', () => {
     await install('@owner/good', { root: tempRoot, fetchImpl });
 
     // Manually create a corrupt entry directory missing meta.json
-    const corruptDir = join(tempRoot, 'github.com', 'owner', 'bad', 'HEAD');
+    const corruptDir = join(tempRoot, 'github.com', 'owner', 'bad', 'latest');
     mkdirSync(corruptDir, { recursive: true });
-    writeFileSync(join(corruptDir, 'cli.schema.v1.json'), '{}');
+    writeFileSync(join(corruptDir, 'cli.schema.latest.json'), '{}');
 
     const entries = await list({ root: tempRoot });
     expect(entries.length).toBe(2);
 
-    const badEntry = entries.find((e) => e.spec === '@owner/bad');
+    const badEntry = entries.find((e) => e.spec === '@owner/bad#latest');
     expect(badEntry).toBeDefined();
     expect(badEntry?.problem).toBeDefined();
   });
@@ -754,7 +741,7 @@ describe('Module Store: list', () => {
     writeFileSync(entry.path, 'tampered content');
 
     const entries = await list({ root: tempRoot });
-    const tampered = entries.find((e) => e.spec === '@owner/tampered');
+    const tampered = entries.find((e) => e.spec === '@owner/tampered#latest');
     expect(tampered).toBeDefined();
     expect(tampered?.problem).toContain('Checksum mismatch');
   });
@@ -771,7 +758,7 @@ describe('Module Store: upgrade', () => {
     await rm(tempRoot, { recursive: true, force: true });
   });
 
-  test('moving ref with identical sha reports action "unchanged"', async () => {
+  test('moving channel with identical sha reports action "unchanged"', async () => {
     const fetchImpl = createMockFetch(() => new Response(JSON.stringify(VALID_SCHEMA_V1)));
     await install('@owner/moving', { root: tempRoot, fetchImpl });
 
@@ -780,17 +767,17 @@ describe('Module Store: upgrade', () => {
     expect(outcomes[0]!.action).toBe('unchanged');
   });
 
-  test('moving ref with different sha replaces entry and reports operations added and removed', async () => {
+  test('moving channel with different sha replaces entry and reports operations added and removed', async () => {
     let version = 1;
     const fetchImpl = createMockFetch(() => {
       const doc = version === 1 ? VALID_SCHEMA_V1 : VALID_SCHEMA_V2;
       return new Response(JSON.stringify(doc));
     });
 
-    await install('@owner/moving', { root: tempRoot, fetchImpl });
+    await install('@owner/moving#dev', { root: tempRoot, fetchImpl });
     version = 2;
 
-    const outcomes = await upgrade('@owner/moving', { root: tempRoot, fetchImpl });
+    const outcomes = await upgrade('@owner/moving#dev', { root: tempRoot, fetchImpl });
     expect(outcomes.length).toBe(1);
     const out = outcomes[0]!;
     expect(out.action).toBe('updated');
@@ -801,57 +788,23 @@ describe('Module Store: upgrade', () => {
     expect(out.operationsRemoved).toEqual(['apply']);
 
     // Cache now holds v2
-    const updated = mustResolve(await resolveCached('@owner/moving', { root: tempRoot }));
+    const updated = mustResolve(await resolveCached('@owner/moving#dev', { root: tempRoot }));
     expect(updated.version).toBe('2.0.0');
   });
 
-  test('immutable ref is skipped with reason "immutable"', async () => {
-    const fetchImpl = createMockFetch(() => new Response(JSON.stringify(VALID_SCHEMA_V1)));
-    await install('@owner/immutable#v1.0.0', { root: tempRoot, fetchImpl });
-
-    const outcomes = await upgrade('@owner/immutable#v1.0.0', { root: tempRoot, fetchImpl });
-    expect(outcomes.length).toBe(1);
-    expect(outcomes[0]!.action).toBe('skipped');
-    if (outcomes[0]!.action !== 'skipped') return;
-    expect(outcomes[0]!.reason).toBe('immutable');
-  });
-
-  test('immutable ref with option "to" installs new ref while preserving old ref', async () => {
-    const fetchImpl = createMockFetch((url) => {
-      if (url.includes('v2.0.0')) {
-        return new Response(JSON.stringify(VALID_SCHEMA_V2));
-      }
-      return new Response(JSON.stringify(VALID_SCHEMA_V1));
-    });
-
-    await install('@owner/repo#v1.0.0', { root: tempRoot, fetchImpl });
-
-    const outcomes = await upgrade('@owner/repo#v1.0.0', { root: tempRoot, fetchImpl, to: 'v2.0.0' });
-    expect(outcomes.length).toBe(1);
-    expect(outcomes[0]!.action).toBe('installed');
-
-    // Both refs exist now
-    const oldRef = await resolveCached('@owner/repo#v1.0.0', { root: tempRoot });
-    expect(oldRef.ok).toBe(true);
-
-    const newRef = await resolveCached('@owner/repo#v2.0.0', { root: tempRoot });
-    expect(newRef.ok).toBe(true);
-  });
-
-  test('upgrade with no arguments upgrades all installed moving modules', async () => {
+  test('upgrade with no arguments upgrades all installed modules', async () => {
     const fetchImpl = createMockFetch(() => new Response(JSON.stringify(VALID_SCHEMA_V1)));
     await install('@owner/m1', { root: tempRoot, fetchImpl });
-    await install('@owner/m2', { root: tempRoot, fetchImpl });
-    await install('@owner/tag#v1.0.0', { root: tempRoot, fetchImpl });
+    await install('@owner/m2#dev', { root: tempRoot, fetchImpl });
 
     const outcomes = await upgrade(undefined, { root: tempRoot, fetchImpl });
-    expect(outcomes.length).toBe(3);
+    expect(outcomes.length).toBe(2);
 
-    const m1 = outcomes.find((o) => o.spec === '@owner/m1');
+    const m1 = outcomes.find((o) => o.spec === '@owner/m1#latest');
     expect(m1?.action).toBe('unchanged');
 
-    const tag = outcomes.find((o) => o.spec === '@owner/tag#v1.0.0');
-    expect(tag?.action).toBe('skipped');
+    const m2 = outcomes.find((o) => o.spec === '@owner/m2#dev');
+    expect(m2?.action).toBe('unchanged');
   });
 
   test('partial failure in upgrade does not prevent other modules from upgrading', async () => {
@@ -869,10 +822,10 @@ describe('Module Store: upgrade', () => {
     const outcomes = await upgrade(['@owner/ok', '@owner/failing'], { root: tempRoot, fetchImpl });
     expect(outcomes.length).toBe(2);
 
-    const okOut = outcomes.find((o) => o.spec === '@owner/ok');
+    const okOut = outcomes.find((o) => o.spec === '@owner/ok#latest');
     expect(okOut?.action).toBe('unchanged');
 
-    const failOut = outcomes.find((o) => o.spec === '@owner/failing');
+    const failOut = outcomes.find((o) => o.spec === '@owner/failing#latest');
     expect(failOut?.action).toBe('failed');
   });
 });
@@ -888,27 +841,26 @@ describe('Module Store: remove', () => {
     await rm(tempRoot, { recursive: true, force: true });
   });
 
-  test('removes single entry directory and prunes empty parents', async () => {
+  test('removes single channel directory and prunes empty parents', async () => {
     const fetchImpl = createMockFetch(() => new Response(JSON.stringify(VALID_SCHEMA_V1)));
-    await install('@owner/repo#v1.0.0', { root: tempRoot, fetchImpl });
+    await install('@owner/repo#dev', { root: tempRoot, fetchImpl });
 
-    const rem = await remove('@owner/repo#v1.0.0', { root: tempRoot });
+    const rem = await remove('@owner/repo#dev', { root: tempRoot });
     expect(rem.ok).toBe(true);
 
-    const cached = await resolveCached('@owner/repo#v1.0.0', { root: tempRoot });
+    const cached = await resolveCached('@owner/repo#dev', { root: tempRoot });
     expect(cached.ok).toBe(false);
 
     // Parent directories should be pruned up to github.com
     expect(existsSync(join(tempRoot, 'github.com', 'owner', 'repo'))).toBe(false);
   });
 
-  test('removes all refs for owner/repo with allRefs: true', async () => {
+  test('removes all channels for owner/repo with allChannels: true', async () => {
     const fetchImpl = createMockFetch(() => new Response(JSON.stringify(VALID_SCHEMA_V1)));
-    await install('@owner/repo#v1.0.0', { root: tempRoot, fetchImpl });
-    await install('@owner/repo#v2.0.0', { root: tempRoot, fetchImpl });
-    await install('@owner/repo#main', { root: tempRoot, fetchImpl });
+    await install('@owner/repo#latest', { root: tempRoot, fetchImpl });
+    await install('@owner/repo#dev', { root: tempRoot, fetchImpl });
 
-    const rem = await remove('@owner/repo', { root: tempRoot, allRefs: true });
+    const rem = await remove('@owner/repo', { root: tempRoot, allChannels: true });
     expect(rem.ok).toBe(true);
 
     expect(existsSync(join(tempRoot, 'github.com', 'owner', 'repo'))).toBe(false);
@@ -921,8 +873,8 @@ describe('Module Store: remove', () => {
     expect(rem.code).toBe('NOT_INSTALLED');
   });
 
-  test('returns NOT_INSTALLED when allRefs: true on non-existent module', async () => {
-    const rem = await remove('@owner/nonexistent', { root: tempRoot, allRefs: true });
+  test('returns NOT_INSTALLED when allChannels: true on non-existent module', async () => {
+    const rem = await remove('@owner/nonexistent', { root: tempRoot, allChannels: true });
     expect(rem.ok).toBe(false);
     if (rem.ok) return;
     expect(rem.code).toBe('NOT_INSTALLED');
@@ -1001,11 +953,11 @@ describe('Module Store: edge cases and failure paths', () => {
     await rm(tempRoot, { recursive: true, force: true });
   });
 
-  test('parseSpec detects invalid ref characters and returns SPEC_REF', () => {
+  test('parseSpec detects invalid channel characters and returns SPEC_CHANNEL', () => {
     const res = parseSpec('@owner/repo#invalid!ref');
     expect(res.ok).toBe(false);
     if (res.ok) return;
-    expect(res.code).toBe('SPEC_REF');
+    expect(res.code).toBe('SPEC_CHANNEL');
   });
 
   test('parseSpec rejects dot segments in owner or repo', () => {
@@ -1022,9 +974,9 @@ describe('Module Store: edge cases and failure paths', () => {
     const maliciousSpec: ModuleSpec = {
       owner: '..',
       repo: 'escaped',
-      refOrHead: 'HEAD',
-      key: '@../escaped',
-      immutable: false,
+      channel: 'latest',
+      key: '@../escaped#latest',
+      requested: '@../escaped',
     };
     expect(() => entryDir(tempRoot, maliciousSpec)).toThrow('Path traversal detected');
   });
@@ -1033,9 +985,9 @@ describe('Module Store: edge cases and failure paths', () => {
     const maliciousSpec: ModuleSpec = {
       owner: '..',
       repo: 'escaped',
-      refOrHead: 'HEAD',
-      key: '@../escaped',
-      immutable: false,
+      channel: 'latest',
+      key: '@../escaped#latest',
+      requested: '@../escaped',
     };
     const res = await resolveCached(maliciousSpec, { root: tempRoot });
     expect(res.ok).toBe(false);
@@ -1047,9 +999,9 @@ describe('Module Store: edge cases and failure paths', () => {
     const maliciousSpec: ModuleSpec = {
       owner: '..',
       repo: 'escaped',
-      refOrHead: 'HEAD',
-      key: '@../escaped',
-      immutable: false,
+      channel: 'latest',
+      key: '@../escaped#latest',
+      requested: '@../escaped',
     };
     const res = await install(maliciousSpec, { root: tempRoot });
     expect(res.ok).toBe(false);
@@ -1111,39 +1063,20 @@ describe('Module Store: edge cases and failure paths', () => {
     expect(outcomes[0]!.action).toBe('failed');
   });
 
-  test('upgrade with --to returns failed when ref has invalid syntax', async () => {
-    const goodFetch = createMockFetch(() => new Response(JSON.stringify(VALID_SCHEMA_V1)));
-    await install('@owner/repo#v1.0.0', { root: tempRoot, fetchImpl: goodFetch });
-
-    const outcomes = await upgrade('@owner/repo#v1.0.0', { root: tempRoot, fetchImpl: goodFetch, to: 'bad//ref' });
-    expect(outcomes.length).toBe(1);
-    expect(outcomes[0]!.action).toBe('failed');
-  });
-
-  test('upgrade with --to returns failed when fetch of new ref fails', async () => {
-    const goodFetch = createMockFetch(() => new Response(JSON.stringify(VALID_SCHEMA_V1)));
-    await install('@owner/repo#v1.0.0', { root: tempRoot, fetchImpl: goodFetch });
-
-    const failFetch = createMockFetch(() => new Response('Not Found', { status: 404 }));
-    const outcomes = await upgrade('@owner/repo#v1.0.0', { root: tempRoot, fetchImpl: failFetch, to: 'v2.0.0' });
-    expect(outcomes.length).toBe(1);
-    expect(outcomes[0]!.action).toBe('failed');
-  });
-
   test('remove returns PATH_TRAVERSAL when spec escapes root', async () => {
     const maliciousSpec: ModuleSpec = {
       owner: '..',
       repo: 'escaped',
-      refOrHead: 'HEAD',
-      key: '@../escaped',
-      immutable: false,
+      channel: 'latest',
+      key: '@../escaped#latest',
+      requested: '@../escaped',
     };
     const res = await remove(maliciousSpec, { root: tempRoot });
     expect(res.ok).toBe(false);
     if (res.ok) return;
     expect(res.code).toBe('PATH_TRAVERSAL');
 
-    const resAll = await remove(maliciousSpec, { root: tempRoot, allRefs: true });
+    const resAll = await remove(maliciousSpec, { root: tempRoot, allChannels: true });
     expect(resAll.ok).toBe(false);
     if (resAll.ok) return;
     expect(resAll.code).toBe('PATH_TRAVERSAL');

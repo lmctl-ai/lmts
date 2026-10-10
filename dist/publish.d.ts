@@ -6,7 +6,7 @@
  * Document version: cli.schema.v1
  * @module @lmctl-ai/lmts/publish
  */
-import type { OperationSchema, ParamSpec, PublishedCliSchema, Result } from './types.js';
+import type { OperationSchema, ParamSpec, ProductInfo, PublishedCliSchema, Result } from './types.js';
 export type { PublishedCliSchema } from './types.js';
 export interface PublishOptions {
     version?: string;
@@ -17,6 +17,7 @@ export interface PublishOptions {
         readonly: boolean;
     };
     toolDescription?: string;
+    product?: ProductInfo;
 }
 /**
  * Build the publishable document for a tool. Callers pass every op that

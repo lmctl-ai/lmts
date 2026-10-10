@@ -52,6 +52,8 @@ import * as modules from ${JSON.stringify(modulesDist)};
 // 1. Assert validate entry exports
 assert.strictEqual(typeof validateEntry.validate, 'function', 'validateEntry.validate must be a function');
 assert.strictEqual(typeof validateEntry.isEffectful, 'function', 'validateEntry.isEffectful must be a function');
+assert.strictEqual(typeof validateEntry.satisfies, 'function', 'validateEntry.satisfies must be a function');
+assert.strictEqual(typeof validateEntry.parseVersion, 'function', 'validateEntry.parseVersion must be a function');
 assert.strictEqual('interpretCommand' in validateEntry, false, 'validateEntry must NOT export interpretCommand');
 
 // 2. Assert main entry exports
@@ -59,17 +61,21 @@ assert.strictEqual(typeof main.interpretCommand, 'function', 'main.interpretComm
 assert.strictEqual(typeof main.tokenizeSimpleCommand, 'function', 'main.tokenizeSimpleCommand must be a function');
 assert.strictEqual(typeof main.classifyOperation, 'function', 'main.classifyOperation must be a function');
 assert.strictEqual(typeof main.describeForPrompt, 'function', 'main.describeForPrompt must be a function');
+assert.strictEqual(typeof main.satisfies, 'function', 'main.satisfies must be a function');
+assert.strictEqual(typeof main.parseVersion, 'function', 'main.parseVersion must be a function');
 
 // 3. Assert server entry exports
 assert.strictEqual(typeof server.runCli, 'function', 'server.runCli must be a function');
 assert.strictEqual(typeof server.checkPolicy, 'function', 'server.checkPolicy must be a function');
 assert.strictEqual(typeof server.spawnCommand, 'function', 'server.spawnCommand must be a function');
+assert.strictEqual(typeof server.checkProductVersion, 'function', 'server.checkProductVersion must be a function');
 
 // 4. Assert modules entry exports
 assert.strictEqual(typeof modules.parseSpec, 'function', 'modules.parseSpec must be a function');
 assert.strictEqual(typeof modules.cacheRoot, 'function', 'modules.cacheRoot must be a function');
 assert.strictEqual(typeof modules.entryDir, 'function', 'modules.entryDir must be a function');
 assert.strictEqual(typeof modules.resolveCached, 'function', 'modules.resolveCached must be a function');
+assert.strictEqual(typeof modules.ensure, 'function', 'modules.ensure must be a function');
 assert.strictEqual(typeof modules.install, 'function', 'modules.install must be a function');
 assert.strictEqual(typeof modules.list, 'function', 'modules.list must be a function');
 assert.strictEqual(typeof modules.upgrade, 'function', 'modules.upgrade must be a function');

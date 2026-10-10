@@ -51,6 +51,17 @@ export interface OperationSchema {
   additionalParams?: boolean;
 }
 
+export interface ProductDetect {
+  argv: string[];
+  pattern: string;
+}
+
+export interface ProductInfo {
+  name: string;
+  supported: string;
+  detect?: ProductDetect;
+}
+
 export interface PublishedCliSchema {
   /** Document version tag (bump on breaking shape changes). */
   schema: 'cli.schema.v1';
@@ -71,6 +82,8 @@ export interface PublishedCliSchema {
   operations: OperationSchema[];
   /** Optional documentation warnings (missing descriptions). */
   warnings?: string[];
+  /** Optional underlying product metadata and compatibility range. */
+  product?: ProductInfo;
 }
 
 export const RESERVED_NAMES = new Set<string>(['__proto__', 'constructor', 'prototype']);

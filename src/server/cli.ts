@@ -35,11 +35,13 @@ import {
   toKebab,
   type OperationSchema,
   type ParamSpec,
+  type ProductInfo,
   type ValidationIssue,
   type ValidationIssueCode,
 } from '../index.js';
 import { CliError, ErrorCode, toCliError } from './errors.js';
 import { printError, printResult, exitCodeFor } from './output.js';
+import { checkProductVersion } from './product.js';
 import type { OpDef } from './types.js';
 import type { Policy } from './policy.js';
 
@@ -54,6 +56,8 @@ export interface RunnerConfig<C> {
   ops: OpDef<C>[];
   /** Build the shared context handed to every op (after policy parsing). */
   buildContext: (policy: Policy) => C;
+  /** Optional underlying product metadata and compatibility range. */
+  product?: ProductInfo;
 }
 
 /** Global flags recognized across all CLI tools. */
@@ -129,6 +133,7 @@ function printSchema<C>(config: RunnerConfig<C>): void {
   const doc = publishSchema(config.toolName, ops, {
     version,
     globals: GLOBAL_FLAGS,
+    product: config.product,
   });
   printResult(doc);
 }
@@ -325,6 +330,19 @@ async function runOp<C>(
   opName: string,
   argvTokens: string[],
 ): Promise<number> {
+  if (config.product) {
+    const productCheck = await checkProductVersion(config.product);
+    if (!productCheck.ok) {
+      const err = new CliError(
+        ErrorCode.UnsupportedProductVersion,
+        productCheck.message,
+        productCheck.data,
+      );
+      printError(err);
+      return err.exitCode;
+    }
+  }
+
   const op = config.ops.find((o) => o.name === opName);
   if (!op) {
     const error = new CliError(

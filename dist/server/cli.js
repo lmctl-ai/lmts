@@ -24,6 +24,7 @@ import { readFileSync } from 'node:fs';
 import { parseArgvForm, parseGraphqlDocument, parseJsonDocument, publishSchema, renderOpHelp, renderToolHelp, resolveInput, SchemaValidationError, toKebab, } from '../index.js';
 import { CliError, ErrorCode, toCliError } from './errors.js';
 import { printError, printResult, exitCodeFor } from './output.js';
+import { checkProductVersion } from './product.js';
 /** Global flags recognized across all CLI tools. */
 export const GLOBAL_FLAGS = [
     { name: 'dryrun', type: 'boolean', occurs: '?', aliases: ['dry-run'], description: 'Simulate write operations' },
@@ -90,6 +91,7 @@ function printSchema(config) {
     const doc = publishSchema(config.toolName, ops, {
         version,
         globals: GLOBAL_FLAGS,
+        product: config.product,
     });
     printResult(doc);
 }
@@ -254,6 +256,14 @@ export async function runCli(config, argv) {
     return runOp(config, opName, rest);
 }
 async function runOp(config, opName, argvTokens) {
+    if (config.product) {
+        const productCheck = await checkProductVersion(config.product);
+        if (!productCheck.ok) {
+            const err = new CliError(ErrorCode.UnsupportedProductVersion, productCheck.message, productCheck.data);
+            printError(err);
+            return err.exitCode;
+        }
+    }
     const op = config.ops.find((o) => o.name === opName);
     if (!op) {
         const error = new CliError(ErrorCode.InvalidRequest, `Unknown operation: ${opName}`, { hint: `Run "${config.toolName} --list" to see available operations.` });

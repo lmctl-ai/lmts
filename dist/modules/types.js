@@ -1,6 +1,6 @@
 /**
  * @fileoverview Type definitions for the lmapi module store (@lmctl-ai/lmts/modules).
- * Defines module specs, cache entries, outcomes, and Result types.
+ * Defines module specs, cache entries, outcomes, channels, and Result types.
  */
 export function ok(value) {
     return { ok: true, value };

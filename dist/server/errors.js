@@ -22,6 +22,7 @@ export var ErrorCode;
     ErrorCode["CommandFailed"] = "COMMAND_FAILED";
     ErrorCode["CommandNotFound"] = "COMMAND_NOT_FOUND";
     ErrorCode["MissingConfirmation"] = "MISSING_CONFIRMATION";
+    ErrorCode["UnsupportedProductVersion"] = "UNSUPPORTED_PRODUCT_VERSION";
     ErrorCode["ParseError"] = "PARSE_ERROR";
     ErrorCode["UnknownError"] = "UNKNOWN_ERROR";
 })(ErrorCode || (ErrorCode = {}));
@@ -39,6 +40,7 @@ export const EXIT_CODES = {
     [ErrorCode.CommandFailed]: 1,
     [ErrorCode.CommandNotFound]: 127,
     [ErrorCode.MissingConfirmation]: 9,
+    [ErrorCode.UnsupportedProductVersion]: 10,
     [ErrorCode.ParseError]: 3,
     [ErrorCode.UnknownError]: 1,
 };

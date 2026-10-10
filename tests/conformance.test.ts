@@ -16,6 +16,7 @@ import {
   type ParamSpec,
   type PublishedCliSchema,
 } from '../src/index.js';
+import { parseSpec } from '../src/modules/index.js';
 
 const CONFORMANCE_DIR = resolve(import.meta.dir, '../../lmapi/conformance');
 const hasConformance = existsSync(CONFORMANCE_DIR);
@@ -239,6 +240,40 @@ describe('conformance vectors (lmapi)', () => {
 
             const rendered = describeForPrompt(schemaDoc);
             expect(rendered).toBe(expected);
+          });
+        }
+      });
+    }
+  }
+
+  // 6. Spec vectors
+  const specDir = resolve(CONFORMANCE_DIR, 'spec');
+  if (existsSync(specDir)) {
+    const files = readdirSync(specDir).filter((f) => f.endsWith('.json'));
+    for (const file of files) {
+      const content = JSON.parse(readFileSync(resolve(specDir, file), 'utf-8'));
+      const cases: any[] = content.cases ?? (Array.isArray(content) ? content : [content]);
+
+      describe(`spec/${file}`, () => {
+        for (const tc of cases) {
+          test(tc.name, () => {
+            const res = parseSpec(tc.spec);
+            if (tc.expect.ok === true) {
+              expect(res.ok).toBe(true);
+              if (res.ok) {
+                expect(res.value.owner).toBe(tc.expect.owner);
+                expect(res.value.repo).toBe(tc.expect.repo);
+                expect(res.value.channel).toBe(tc.expect.channel);
+                expect(res.value.key).toBe(tc.expect.key);
+              }
+            } else {
+              expect(res.ok).toBe(false);
+              if (!res.ok) {
+                if (tc.expect.code) {
+                  expect(res.code).toBe(tc.expect.code);
+                }
+              }
+            }
           });
         }
       });

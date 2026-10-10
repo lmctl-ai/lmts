@@ -14,3 +14,5 @@ export * from './argv-form.js';
 export * from './publish.js';
 export * from './encode.js';
 export * from './interpret.js';
+export * from './version.js';
+

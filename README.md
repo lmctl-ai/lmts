@@ -102,7 +102,7 @@ For a complete specification aimed at implementing tools in Go, Rust, or other l
 
 ## Module Store
 
-The `@lmctl-ai/lmts/modules` entry point manages locally cached schemas downloaded from GitHub repositories:
+The `@lmctl-ai/lmts/modules` entry point manages locally cached schemas downloaded from GitHub repositories using the evergreen auto-refresh model:
 
 ```ts
 import {
@@ -110,6 +110,7 @@ import {
   cacheRoot,
   entryDir,
   resolveCached,
+  ensure,
   install,
   list,
   upgrade,
@@ -117,38 +118,57 @@ import {
   findOnPath,
 } from '@lmctl-ai/lmts/modules';
 
-// Parse module specifier
-const specResult = parseSpec('@lmctl-ai/lmgit#v1.0.0');
+// Parse module specifier (latest or dev channel)
+const specResult = parseSpec('@lmctl-ai/lmgit');
 if (specResult.ok) {
   const spec = specResult.value;
-  console.log(spec.owner, spec.repo, spec.ref, spec.immutable);
+  console.log(spec.owner, spec.repo, spec.channel, spec.key);
 }
 
-// Install or resolve a module
-const installResult = await install('@lmctl-ai/lmgit#v1.0.0');
-if (installResult.ok) {
-  console.log(`Action: ${installResult.value.action}`);
-  console.log(`Schema path: ${installResult.value.entry.path}`);
-  console.log(`Tool: ${installResult.value.entry.tool}`);
+// Evergreen resolution: uses cache (< TTL, default 6h), conditionally checks upstream (304/200),
+// falls back to stale cache on network failure, or installs if missing
+const ensureResult = await ensure('@lmctl-ai/lmgit#latest');
+if (ensureResult.ok) {
+  console.log(`Source: ${ensureResult.value.source}`); // 'cache' | 'network' | 'stale-cache' | 'installed'
+  console.log(`Schema path: ${ensureResult.value.module.path}`);
+  console.log(`Tool: ${ensureResult.value.module.tool}`);
+  if (ensureResult.value.warning) {
+    console.warn(`Warning: ${ensureResult.value.warning}`);
+  }
 }
 
-// Fast resolution from local cache with SHA-256 verification
-const cached = await resolveCached('@lmctl-ai/lmgit#v1.0.0');
+// Fast resolution from local cache with SHA-256 verification (no network)
+const cached = await resolveCached('@lmctl-ai/lmgit#latest');
 
-// Upgrade moving refs (immutable tags are skipped safely)
+// Explicit upgrade: refetches moving channels (latest/dev) and reports diff
 const upgradeResults = await upgrade();
 
 // Remove from cache
-await remove('@lmctl-ai/lmgit#v1.0.0');
+await remove('@lmctl-ai/lmgit#latest');
 
 // Check PATH for local CLI binary
 const binaryPath = findOnPath('lmgit');
 ```
 
+### Evergreen Resolution Fallback Table
+
+`ensure(spec, options?)` implements the browser auto-upgrade model:
+
+| Cache State | Age vs TTL | Network Response | Result Source | Disk Action |
+| :--- | :--- | :--- | :--- | :--- |
+| Present | Age < TTL | *(No network request)* | `'cache'` | None (fast path) |
+| Present | Age $\ge$ TTL | `304 Not Modified` | `'network'` | Atomically bump `last_checked` in `meta.json` |
+| Present | Age $\ge$ TTL | `200 OK` (valid schema) | `'network'` | Atomically replace schema and `meta.json` |
+| Present | Age $\ge$ TTL | Error / timeout / 4xx / 5xx / invalid | `'stale-cache'` | Unmodified (returns warning, preserves files) |
+| Present | *(Any age)* | `update: false` | `'cache'` | None (offline mode) |
+| Missing | N/A | `install: true` (default) | `'installed'` | Atomically install new cache entry |
+| Missing | N/A | `install: false` | *(Error: `NOT_INSTALLED`)* | Suggests `lmbee module install <spec>` |
+| Corrupt | N/A | *(Any)* | *(Error: `CACHE_CORRUPT`)* | Never silently refetched (suggests `--force`) |
+
 Key guarantees:
 - **Streaming Byte Cap**: Enforces a 2 MiB limit (`OUTPUT_LIMIT`) on fetched schemas to prevent runaway resource consumption.
 - **Atomic Cache Operations**: Files are staged in temporary files and renamed atomically into place with `0700` directory and `0600` file permissions.
-- **Tamper Detection**: Every cached schema is verified against its recorded SHA-256 hash in `meta.json` before being returned by `resolveCached`.
+- **Tamper Detection**: Every cached schema is verified against its recorded SHA-256 hash in `meta.json` before being returned by `resolveCached` or `ensure`.
 - **Path Traversal Protection**: Spec parsing and path resolution strictly forbid directory traversal (`..`) and escape from the cache root.
 
 ## Durable Memory

@@ -21,6 +21,7 @@ export declare enum ErrorCode {
     CommandFailed = "COMMAND_FAILED",
     CommandNotFound = "COMMAND_NOT_FOUND",
     MissingConfirmation = "MISSING_CONFIRMATION",
+    UnsupportedProductVersion = "UNSUPPORTED_PRODUCT_VERSION",
     ParseError = "PARSE_ERROR",
     UnknownError = "UNKNOWN_ERROR"
 }

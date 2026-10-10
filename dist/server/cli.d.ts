@@ -20,7 +20,7 @@
  * Values arriving on the CLI are parsed against the op's schema.
  * @module @lmctl-ai/lmts/server/cli
  */
-import { type OperationSchema, type ParamSpec } from '../index.js';
+import { type OperationSchema, type ParamSpec, type ProductInfo } from '../index.js';
 import type { OpDef } from './types.js';
 import type { Policy } from './policy.js';
 export interface RunnerConfig<C> {
@@ -34,6 +34,8 @@ export interface RunnerConfig<C> {
     ops: OpDef<C>[];
     /** Build the shared context handed to every op (after policy parsing). */
     buildContext: (policy: Policy) => C;
+    /** Optional underlying product metadata and compatibility range. */
+    product?: ProductInfo;
 }
 /** Global flags recognized across all CLI tools. */
 export declare const GLOBAL_FLAGS: ParamSpec[];

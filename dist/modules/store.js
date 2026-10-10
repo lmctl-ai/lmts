@@ -1,15 +1,16 @@
 /**
  * @fileoverview Module store implementation for @lmctl-ai/lmts/modules.
- * Implements resolveCached, install, list, upgrade, and remove.
+ * Implements resolveCached, ensure, install, list, upgrade, and remove for latest and dev channels.
  */
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, promises as fs } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { parsePublishedSchema } from '../publish.js';
-import { cacheRoot, entryDir } from './paths.js';
+import { cacheRoot, entryDir, findOnPath, schemaFileName } from './paths.js';
 import { parseSpec } from './spec.js';
 import { err, ok, } from './types.js';
 const GITHUB_RAW_BASE = 'https://raw.githubusercontent.com';
+const MAX_SCHEMA_BYTES = 2 * 1024 * 1024; // 2 MiB default cap
 function normalizeSpec(spec) {
     if (typeof spec === 'string') {
         return parseSpec(spec);
@@ -35,7 +36,8 @@ export async function resolveCached(spec, options) {
     catch (e) {
         return err('PATH_TRAVERSAL', e?.message ?? String(e));
     }
-    const schemaPath = join(dir, 'cli.schema.v1.json');
+    const sFileName = schemaFileName(parsedSpec.channel);
+    const schemaPath = join(dir, sFileName);
     const metaPath = join(dir, 'meta.json');
     if (!existsSync(schemaPath) || !existsSync(metaPath)) {
         return err('NOT_INSTALLED', `Module ${parsedSpec.key} is not installed`);
@@ -46,7 +48,7 @@ export async function resolveCached(spec, options) {
         schemaBytes = await fs.readFile(schemaPath);
     }
     catch (e) {
-        return err('CACHE_CORRUPT', `Failed to read ${schemaPath}: ${e?.message ?? String(e)}`, {
+        return err('CACHE_CORRUPT', `Failed to read ${schemaPath}: ${e?.message ?? String(e)}; run: lmbee module install ${parsedSpec.key} --force`, {
             file: schemaPath,
         });
     }
@@ -55,13 +57,13 @@ export async function resolveCached(spec, options) {
         meta = JSON.parse(metaText);
     }
     catch (e) {
-        return err('CACHE_CORRUPT', `Failed to read or parse ${metaPath}: ${e?.message ?? String(e)}`, {
+        return err('CACHE_CORRUPT', `Failed to read or parse ${metaPath}: ${e?.message ?? String(e)}; run: lmbee module install ${parsedSpec.key} --force`, {
             file: metaPath,
         });
     }
     const computedSha = createHash('sha256').update(schemaBytes).digest('hex');
     if (computedSha !== meta.sha256) {
-        return err('CACHE_CORRUPT', `Cached schema hash mismatch in ${schemaPath}: expected ${meta.sha256}, got ${computedSha}`, { file: schemaPath });
+        return err('CACHE_CORRUPT', `Cached schema hash mismatch in ${schemaPath}: expected ${meta.sha256}, got ${computedSha}; run: lmbee module install ${parsedSpec.key} --force`, { file: schemaPath });
     }
     let schemaJson;
     try {
@@ -74,8 +76,7 @@ export async function resolveCached(spec, options) {
     }
     const validation = parsePublishedSchema(schemaJson);
     if (!validation.ok) {
-        const firstIssue = validation.issues[0]?.message ?? 'Invalid schema';
-        return err('INVALID_SCHEMA', `Cached schema in ${schemaPath} is invalid: ${firstIssue}`, {
+        return err('INVALID_SCHEMA', `Cached schema in ${schemaPath} is invalid: ${validation.issues[0]?.message}`, {
             file: schemaPath,
             issues: validation.issues,
         });
@@ -86,63 +87,29 @@ export async function resolveCached(spec, options) {
         path: schemaPath,
         sha256: computedSha,
         fetchedAt: meta.fetched_at,
+        lastChecked: meta.last_checked ?? meta.fetched_at,
+        etag: meta.etag,
+        channel: parsedSpec.channel,
         tool: validation.value.tool,
         version: validation.value.version,
         document: validation.value,
     });
 }
 /**
- * Downloads and caches a published CLI schema from GitHub.
- * Verifies HTTPS, enforces byte caps, validates published schema structure,
- * and writes files atomically (0700 dir, 0600 files).
- * An invalid download will never corrupt or replace an existing good entry.
+ * Shared fetch helper supporting manual redirect validation and conditional GET headers.
  */
-export async function install(spec, options) {
-    const specResult = normalizeSpec(spec);
-    if (!specResult.ok) {
-        return err(specResult.code, specResult.message);
-    }
-    const parsedSpec = specResult.value;
-    const root = options?.root ?? cacheRoot();
-    const force = options?.force ?? false;
-    const timeoutMs = options?.timeoutMs ?? 10000;
-    const maxBytes = options?.maxBytes ?? 1048576; // 1 MiB
-    const fetchImpl = options?.fetchImpl ?? globalThis.fetch;
-    const now = options?.now ?? (() => new Date());
-    let dir;
-    try {
-        dir = entryDir(root, parsedSpec);
-    }
-    catch (e) {
-        return err('PATH_TRAVERSAL', e?.message ?? String(e));
-    }
-    if (!force) {
-        const cached = await resolveCached(parsedSpec, { root });
-        if (cached.ok) {
-            return ok({
-                action: 'unchanged',
-                entry: cached.value,
-            });
-        }
-    }
-    const prior = await resolveCached(parsedSpec, { root });
-    const url = `${GITHUB_RAW_BASE}/${parsedSpec.owner}/${parsedSpec.repo}/${parsedSpec.refOrHead}/cli.schema.v1.json`;
-    let parsedUrl;
-    try {
-        parsedUrl = new URL(url);
-        if (parsedUrl.protocol !== 'https:') {
-            return err('FETCH_FAILED', `Refusing non-HTTPS URL: ${url}`);
-        }
-    }
-    catch (e) {
-        return err('FETCH_FAILED', `Invalid URL: ${url}`);
-    }
+async function fetchSchemaWithRedirects(url, options) {
+    const { timeoutMs, fetchImpl, etag } = options;
     let response;
     try {
         const signal = AbortSignal.timeout(timeoutMs);
-        response = await fetchImpl(url, { signal, redirect: 'manual' });
-        // Handle redirects manually to enforce https and same host
-        if (response.status >= 300 && response.status < 400) {
+        const headers = {};
+        if (etag) {
+            headers['If-None-Match'] = etag;
+        }
+        response = await fetchImpl(url, { signal, headers, redirect: 'manual' });
+        // Handle redirects manually to enforce https and same host (except 304 Not Modified)
+        if (response.status >= 300 && response.status < 400 && response.status !== 304) {
             const location = response.headers.get('location');
             if (!location) {
                 return err('FETCH_FAILED', `Redirect response from ${url} missing Location header`);
@@ -151,7 +118,7 @@ export async function install(spec, options) {
             if (targetUrl.protocol !== 'https:' || targetUrl.hostname !== 'raw.githubusercontent.com') {
                 return err('FETCH_FAILED', `Cross-host or non-HTTPS redirect to "${location}" refused (must stay on raw.githubusercontent.com)`);
             }
-            response = await fetchImpl(targetUrl.href, { signal, redirect: 'manual' });
+            response = await fetchImpl(targetUrl.href, { signal, headers, redirect: 'manual' });
         }
     }
     catch (e) {
@@ -160,15 +127,12 @@ export async function install(spec, options) {
         }
         return err('FETCH_FAILED', `Network error fetching ${url}: ${e?.message ?? String(e)}`);
     }
-    if (response.status === 404) {
-        return err('FETCH_FAILED', `Module ${parsedSpec.key} not found at ${url} (expected cli.schema.v1.json at repository root)`, { details: { status: 404, url } });
-    }
-    if (!response.ok) {
-        return err('FETCH_FAILED', `Failed to fetch ${url}: HTTP ${response.status} ${response.statusText}`, {
-            details: { status: response.status, url },
-        });
-    }
-    // Stream with hard byte cap
+    return ok(response);
+}
+/**
+ * Shared helper to stream, cap, parse JSON, and validate against cli.schema.v1.
+ */
+async function readAndValidatePayload(response, maxBytes, timeoutMs, specKey, fileName, url) {
     let buffer;
     try {
         if (response.body && typeof response.body.getReader === 'function') {
@@ -207,39 +171,27 @@ export async function install(spec, options) {
         schemaJson = JSON.parse(buffer.toString('utf-8'));
     }
     catch (e) {
-        return err('BAD_JSON', `Failed to parse cli.schema.v1.json from ${url} as JSON: ${e?.message ?? String(e)}`);
+        return err('BAD_JSON', `Failed to parse ${fileName} from ${url} as JSON: ${e?.message ?? String(e)}`);
     }
     const validation = parsePublishedSchema(schemaJson);
     if (!validation.ok) {
         const firstIssue = validation.issues[0]?.message ?? 'Schema validation failed';
-        return err('INVALID_SCHEMA', `Invalid schema for ${parsedSpec.key}: ${firstIssue}`, {
+        return err('INVALID_SCHEMA', `Invalid schema for ${specKey}: ${firstIssue}`, {
             issues: validation.issues,
         });
     }
     const sha256 = createHash('sha256').update(buffer).digest('hex');
-    if (!force && prior.ok && prior.value.sha256 === sha256) {
-        return ok({
-            action: 'unchanged',
-            entry: prior.value,
-        });
-    }
-    // Atomic write to cache
+    return ok({ buffer, sha256, schema: validation.value });
+}
+/**
+ * Atomically writes both the schema file and meta.json with restrictive permissions (0700/0600).
+ */
+async function atomicWriteEntry(dir, sFileName, buffer, metaDoc) {
     await fs.mkdir(dir, { recursive: true, mode: 0o700 });
-    await safeChmod(dir, 0o700);
     const tempSchema = join(dir, `.tmp.schema.${Date.now()}.${randomUUID()}`);
     const tempMeta = join(dir, `.tmp.meta.${Date.now()}.${randomUUID()}`);
-    const targetSchema = join(dir, 'cli.schema.v1.json');
+    const targetSchema = join(dir, sFileName);
     const targetMeta = join(dir, 'meta.json');
-    const metaDoc = {
-        spec: parsedSpec.key,
-        url,
-        sha256,
-        fetched_at: now().toISOString(),
-        ...(parsedSpec.ref !== undefined ? { ref: parsedSpec.ref } : {}),
-        tool: validation.value.tool,
-        version: validation.value.version,
-        bytes: buffer.length,
-    };
     try {
         await fs.writeFile(tempSchema, buffer, { mode: 0o600 });
         await fs.rename(tempSchema, targetSchema);
@@ -249,20 +201,298 @@ export async function install(spec, options) {
         await safeChmod(targetMeta, 0o600);
     }
     catch (e) {
-        // Clean up temporary files on failure
         await safeUnlink(tempSchema);
         await safeUnlink(tempMeta);
         return err('ATOMIC_WRITE_FAILED', `Failed to write cached module files: ${e?.message ?? String(e)}`);
     }
+    return ok(undefined);
+}
+/**
+ * Atomically writes meta.json only (e.g. for 304 freshness updates).
+ */
+async function atomicWriteMeta(dir, metaDoc) {
+    const tempMeta = join(dir, `.tmp.meta.${Date.now()}.${randomUUID()}`);
+    const targetMeta = join(dir, 'meta.json');
+    try {
+        await fs.writeFile(tempMeta, JSON.stringify(metaDoc, null, 2) + '\n', { mode: 0o600 });
+        await fs.rename(tempMeta, targetMeta);
+        await safeChmod(targetMeta, 0o600);
+    }
+    catch (e) {
+        await safeUnlink(tempMeta);
+        return err('ATOMIC_WRITE_FAILED', `Failed to write meta.json: ${e?.message ?? String(e)}`);
+    }
+    return ok(undefined);
+}
+/**
+ * Ensures an evergreen module is cached and sufficiently fresh.
+ * Younger than TTL -> uses cache directly without network.
+ * Stale + update=true -> conditional GET (304: touch meta.json, 200: atomic replace, failure: stale fallback).
+ * Missing + install=true -> downloads and caches.
+ */
+export async function ensure(spec, options) {
+    const specResult = normalizeSpec(spec);
+    if (!specResult.ok) {
+        return err(specResult.code, specResult.message);
+    }
+    const parsedSpec = specResult.value;
+    const root = options?.root ?? cacheRoot();
+    const ttlMs = options?.ttlMs ?? 6 * 60 * 60 * 1000;
+    const now = options?.now ?? (() => new Date());
+    const fetchImpl = options?.fetchImpl ?? globalThis.fetch;
+    const installOpt = options?.install ?? true;
+    const updateOpt = options?.update ?? true;
+    const timeoutMs = options?.timeoutMs ?? 3000;
+    const maxBytes = options?.maxBytes ?? 1048576; // 1 MiB default for ensure
+    const cached = await resolveCached(parsedSpec, { root });
+    if (!cached.ok) {
+        if (cached.code === 'CACHE_CORRUPT') {
+            return cached;
+        }
+        if (cached.code === 'NOT_INSTALLED') {
+            if (!installOpt) {
+                return err('NOT_INSTALLED', `Module ${parsedSpec.key} is not installed; run: lmbee module install ${parsedSpec.key}`);
+            }
+            const installRes = await install(parsedSpec, {
+                root,
+                fetchImpl,
+                now,
+                timeoutMs,
+                maxBytes,
+            });
+            if (!installRes.ok) {
+                return err(installRes.code, installRes.message, {
+                    file: installRes.file,
+                    issues: installRes.issues,
+                    details: installRes.details,
+                });
+            }
+            return ok({
+                module: installRes.value.entry,
+                source: 'installed',
+            });
+        }
+        return cached;
+    }
+    const currentModule = cached.value;
+    const currentTime = now().getTime();
+    const lastCheckedTime = currentModule.lastChecked
+        ? new Date(currentModule.lastChecked).getTime()
+        : NaN;
+    const isFuture = !isNaN(lastCheckedTime) && lastCheckedTime > currentTime;
+    const isMissing = isNaN(lastCheckedTime);
+    const age = currentTime - lastCheckedTime;
+    const isFresh = !isMissing && !isFuture && age >= 0 && age < ttlMs;
+    if (isFresh || !updateOpt) {
+        return ok({
+            module: currentModule,
+            source: 'cache',
+        });
+    }
+    // Stale and update=true: execute one conditional GET
+    const sFileName = schemaFileName(parsedSpec.channel);
+    const url = `${GITHUB_RAW_BASE}/${parsedSpec.owner}/${parsedSpec.repo}/HEAD/${sFileName}`;
+    const fetchRes = await fetchSchemaWithRedirects(url, {
+        timeoutMs,
+        fetchImpl,
+        etag: currentModule.etag,
+    });
+    if (!fetchRes.ok) {
+        return ok({
+            module: currentModule,
+            source: 'stale-cache',
+            warning: fetchRes.message,
+        });
+    }
+    const response = fetchRes.value;
+    if (response.status === 304) {
+        const newLastChecked = now().toISOString();
+        const newEtag = response.headers.get('etag') ?? response.headers.get('ETag') ?? currentModule.etag;
+        let byteSize = 0;
+        try {
+            byteSize = (await fs.stat(currentModule.path)).size;
+        }
+        catch {
+            byteSize = 0;
+        }
+        const metaDoc = {
+            spec: parsedSpec.key,
+            url,
+            sha256: currentModule.sha256,
+            fetched_at: currentModule.fetchedAt,
+            last_checked: newLastChecked,
+            etag: newEtag,
+            channel: parsedSpec.channel,
+            tool: currentModule.tool,
+            version: currentModule.version,
+            bytes: byteSize,
+        };
+        const writeMetaRes = await atomicWriteMeta(currentModule.dir, metaDoc);
+        if (!writeMetaRes.ok) {
+            return ok({
+                module: currentModule,
+                source: 'stale-cache',
+                warning: writeMetaRes.message,
+            });
+        }
+        const updatedModule = {
+            ...currentModule,
+            lastChecked: newLastChecked,
+            etag: newEtag,
+        };
+        return ok({
+            module: updatedModule,
+            source: 'network',
+        });
+    }
+    if (response.status !== 200) {
+        return ok({
+            module: currentModule,
+            source: 'stale-cache',
+            warning: `Failed to refresh ${parsedSpec.key}: HTTP ${response.status} ${response.statusText}`,
+        });
+    }
+    const payloadRes = await readAndValidatePayload(response, maxBytes, timeoutMs, parsedSpec.key, sFileName, url);
+    if (!payloadRes.ok) {
+        return ok({
+            module: currentModule,
+            source: 'stale-cache',
+            warning: payloadRes.message,
+        });
+    }
+    const { buffer, sha256, schema } = payloadRes.value;
+    const responseEtag = response.headers.get('etag') ?? response.headers.get('ETag') ?? undefined;
+    const fetchedAt = now().toISOString();
+    const lastChecked = fetchedAt;
+    const metaDoc = {
+        spec: parsedSpec.key,
+        url,
+        sha256,
+        fetched_at: fetchedAt,
+        last_checked: lastChecked,
+        etag: responseEtag,
+        channel: parsedSpec.channel,
+        tool: schema.tool,
+        version: schema.version ?? 'unknown',
+        bytes: buffer.length,
+    };
+    const writeRes = await atomicWriteEntry(currentModule.dir, sFileName, buffer, metaDoc);
+    if (!writeRes.ok) {
+        return ok({
+            module: currentModule,
+            source: 'stale-cache',
+            warning: writeRes.message,
+        });
+    }
+    const newModule = {
+        spec: parsedSpec,
+        dir: currentModule.dir,
+        path: currentModule.path,
+        sha256,
+        fetchedAt,
+        lastChecked,
+        etag: responseEtag,
+        channel: parsedSpec.channel,
+        tool: schema.tool,
+        version: schema.version,
+        document: schema,
+    };
+    return ok({
+        module: newModule,
+        source: 'network',
+    });
+}
+/**
+ * Installs a module schema from GitHub raw content into the local cache.
+ * Streamed with a 2 MiB hard limit, verified with parsePublishedSchema,
+ * and atomically written to disk with restrictive permissions (0700/0600).
+ */
+export async function install(spec, options) {
+    const specResult = normalizeSpec(spec);
+    if (!specResult.ok) {
+        return err(specResult.code, specResult.message);
+    }
+    const parsedSpec = specResult.value;
+    const root = options?.root ?? cacheRoot();
+    const fetchImpl = options?.fetchImpl ?? globalThis.fetch;
+    const now = options?.now ?? (() => new Date());
+    const timeoutMs = options?.timeoutMs ?? 10000;
+    const maxBytes = options?.maxBytes ?? MAX_SCHEMA_BYTES;
+    const force = options?.force ?? false;
+    let dir;
+    try {
+        dir = entryDir(root, parsedSpec);
+    }
+    catch (e) {
+        return err('PATH_TRAVERSAL', e?.message ?? String(e));
+    }
+    const sFileName = schemaFileName(parsedSpec.channel);
+    const url = `${GITHUB_RAW_BASE}/${parsedSpec.owner}/${parsedSpec.repo}/HEAD/${sFileName}`;
+    const prior = await resolveCached(parsedSpec, { root });
+    if (!force && prior.ok) {
+        return ok({
+            action: 'unchanged',
+            entry: prior.value,
+        });
+    }
+    const fetchRes = await fetchSchemaWithRedirects(url, {
+        timeoutMs,
+        fetchImpl,
+    });
+    if (!fetchRes.ok) {
+        return fetchRes;
+    }
+    const response = fetchRes.value;
+    if (response.status === 404) {
+        return err('FETCH_FAILED', `Module ${parsedSpec.key} not found: expected ${sFileName} at the root of the default branch for ${parsedSpec.owner}/${parsedSpec.repo}`, { details: { status: 404, url, file: sFileName } });
+    }
+    if (!response.ok) {
+        return err('FETCH_FAILED', `Failed to fetch ${url}: HTTP ${response.status} ${response.statusText}`, {
+            details: { status: response.status, url },
+        });
+    }
+    const payloadRes = await readAndValidatePayload(response, maxBytes, timeoutMs, parsedSpec.key, sFileName, url);
+    if (!payloadRes.ok) {
+        return payloadRes;
+    }
+    const { buffer, sha256, schema } = payloadRes.value;
+    if (!force && prior.ok && prior.value.sha256 === sha256) {
+        return ok({
+            action: 'unchanged',
+            entry: prior.value,
+        });
+    }
+    const responseEtag = response.headers.get('etag') ?? response.headers.get('ETag') ?? undefined;
+    const fetchedAt = now().toISOString();
+    const lastChecked = fetchedAt;
+    const metaDoc = {
+        spec: parsedSpec.key,
+        url,
+        sha256,
+        fetched_at: fetchedAt,
+        last_checked: lastChecked,
+        etag: responseEtag,
+        channel: parsedSpec.channel,
+        tool: schema.tool,
+        version: schema.version ?? 'unknown',
+        bytes: buffer.length,
+    };
+    const writeRes = await atomicWriteEntry(dir, sFileName, buffer, metaDoc);
+    if (!writeRes.ok) {
+        return writeRes;
+    }
     const entry = {
         spec: parsedSpec,
         dir,
-        path: targetSchema,
+        path: join(dir, sFileName),
         sha256,
-        fetchedAt: metaDoc.fetched_at,
-        tool: validation.value.tool,
-        version: validation.value.version,
-        document: validation.value,
+        fetchedAt,
+        lastChecked,
+        etag: responseEtag,
+        channel: parsedSpec.channel,
+        tool: schema.tool,
+        version: schema.version,
+        document: schema,
     };
     return ok({
         action: prior.ok ? 'replaced' : 'installed',
@@ -279,15 +509,15 @@ export async function list(options) {
     if (!existsSync(ghDir)) {
         return [];
     }
-    const entries = [];
-    let owners;
+    let ownerDirs;
     try {
-        owners = await fs.readdir(ghDir);
+        ownerDirs = await fs.readdir(ghDir);
     }
     catch {
         return [];
     }
-    for (const owner of owners) {
+    const entries = [];
+    for (const owner of ownerDirs) {
         const ownerDir = join(ghDir, owner);
         let ownerStat;
         try {
@@ -298,14 +528,14 @@ export async function list(options) {
         }
         if (!ownerStat.isDirectory())
             continue;
-        let repos;
+        let repoDirs;
         try {
-            repos = await fs.readdir(ownerDir);
+            repoDirs = await fs.readdir(ownerDir);
         }
         catch {
             continue;
         }
-        for (const repo of repos) {
+        for (const repo of repoDirs) {
             const repoDir = join(ownerDir, repo);
             let repoStat;
             try {
@@ -316,15 +546,15 @@ export async function list(options) {
             }
             if (!repoStat.isDirectory())
                 continue;
-            let refDirs;
+            let channelDirs;
             try {
-                refDirs = await fs.readdir(repoDir);
+                channelDirs = await fs.readdir(repoDir);
             }
             catch {
                 continue;
             }
-            for (const encodedRef of refDirs) {
-                const dir = join(repoDir, encodedRef);
+            for (const channelName of channelDirs) {
+                const dir = join(repoDir, channelName);
                 let dirStat;
                 try {
                     dirStat = await fs.stat(dir);
@@ -334,79 +564,71 @@ export async function list(options) {
                 }
                 if (!dirStat.isDirectory())
                     continue;
-                let decodedRef;
-                try {
-                    decodedRef = decodeURIComponent(encodedRef);
-                }
-                catch {
-                    decodedRef = encodedRef;
-                }
-                const isHead = decodedRef === 'HEAD';
-                const ref = isHead ? undefined : decodedRef;
-                const specKey = `@${owner}/${repo}${ref ? '#' + ref : ''}`;
-                const schemaFile = join(dir, 'cli.schema.v1.json');
+                const specKey = `@${owner}/${repo}#${channelName}`;
+                const isKnownChannel = channelName === 'latest' || channelName === 'dev';
+                const channel = isKnownChannel ? channelName : undefined;
+                const sFileName = channel ? schemaFileName(channel) : `cli.schema.${channelName}.json`;
+                const schemaFile = join(dir, sFileName);
                 const metaFile = join(dir, 'meta.json');
                 if (!existsSync(schemaFile) || !existsSync(metaFile)) {
                     entries.push({
                         spec: specKey,
-                        ref,
+                        channel,
                         dir,
-                        problem: 'Missing cli.schema.v1.json or meta.json',
+                        problem: `Missing ${sFileName} or meta.json`,
                     });
                     continue;
                 }
+                let sha;
                 let meta;
-                let schemaBytes;
                 try {
+                    const content = await fs.readFile(schemaFile);
+                    sha = createHash('sha256').update(content).digest('hex');
                     meta = JSON.parse(await fs.readFile(metaFile, 'utf-8'));
-                    schemaBytes = await fs.readFile(schemaFile);
                 }
                 catch (e) {
                     entries.push({
                         spec: specKey,
-                        ref,
+                        channel,
                         dir,
                         problem: `Unreadable or corrupt files: ${e?.message ?? String(e)}`,
                     });
                     continue;
                 }
-                const sha = createHash('sha256').update(schemaBytes).digest('hex');
                 if (sha !== meta.sha256) {
                     entries.push({
                         spec: specKey,
-                        ref,
+                        channel,
                         dir,
                         problem: `Checksum mismatch: expected ${meta.sha256}, got ${sha}`,
                     });
                     continue;
                 }
-                const specRes = parseSpec(meta.spec ?? specKey);
-                const immutable = specRes.ok ? specRes.value.immutable : false;
+                const binaryOnPath = meta.tool ? (findOnPath(meta.tool) ?? null) : null;
                 entries.push({
                     spec: meta.spec ?? specKey,
-                    ref: meta.ref,
+                    channel: meta.channel ?? channel,
                     tool: meta.tool,
                     version: meta.version,
                     sha256: meta.sha256,
                     fetchedAt: meta.fetched_at,
                     dir,
-                    immutable,
+                    binaryOnPath,
                 });
             }
         }
     }
-    entries.sort((a, b) => a.spec.localeCompare(b.spec));
     return entries;
 }
 /**
- * Upgrades installed modules on moving refs (HEAD/branches), or installs a new ref with `to`.
- * Immutable refs (semver tags/commit shas) are skipped unless `to` is specified.
+ * Upgrades installed modules on moving channels (latest and dev).
+ * Both channels are moving: refetches every installed entry (or specified specs)
+ * and reports unchanged/updated with added/removed operations.
  */
 export async function upgrade(specOrSpecs, options) {
     const root = options?.root ?? cacheRoot();
     const fetchImpl = options?.fetchImpl;
     const now = options?.now;
-    const to = options?.to;
     let specs = [];
     if (specOrSpecs !== undefined) {
         const rawList = Array.isArray(specOrSpecs) ? specOrSpecs : [specOrSpecs];
@@ -416,7 +638,6 @@ export async function upgrade(specOrSpecs, options) {
                 specs.push(res.value);
             }
             else {
-                // Return immediate failure for invalid spec syntax
                 return [
                     {
                         action: 'failed',
@@ -428,59 +649,35 @@ export async function upgrade(specOrSpecs, options) {
         }
     }
     else {
-        const all = await list({ root });
-        for (const entry of all) {
-            if (!entry.problem) {
-                const res = parseSpec(entry.spec);
-                if (res.ok) {
-                    specs.push(res.value);
+        const installed = await list({ root });
+        for (const entry of installed) {
+            if (entry.channel) {
+                const parsed = parseSpec(entry.spec);
+                if (parsed.ok) {
+                    specs.push(parsed.value);
                 }
             }
         }
     }
     const outcomes = [];
     for (const spec of specs) {
-        if (to !== undefined) {
-            const newKey = `@${spec.owner}/${spec.repo}#${to}`;
-            const newSpec = parseSpec(newKey);
-            if (!newSpec.ok) {
-                outcomes.push({ action: 'failed', spec: spec.key, error: newSpec.message });
-                continue;
-            }
-            const res = await install(newSpec.value, { root, fetchImpl, now, force: true });
-            if (res.ok) {
-                outcomes.push({
-                    action: 'installed',
-                    spec: newSpec.value.key,
-                    toSha: res.value.entry.sha256,
-                    toVersion: res.value.entry.version,
-                });
-            }
-            else {
-                outcomes.push({ action: 'failed', spec: newSpec.value.key, error: res.message });
-            }
-            continue;
-        }
-        if (spec.immutable) {
-            outcomes.push({ action: 'skipped', spec: spec.key, reason: 'immutable' });
-            continue;
-        }
-        // Moving ref: check current
         const current = await resolveCached(spec, { root });
         if (!current.ok) {
-            outcomes.push({ action: 'failed', spec: spec.key, error: current.message });
+            outcomes.push({ action: 'failed', spec: spec.key, channel: spec.channel, error: current.message });
             continue;
         }
         const res = await install(spec, { root, fetchImpl, now, force: true });
         if (!res.ok) {
-            outcomes.push({ action: 'failed', spec: spec.key, error: res.message });
+            outcomes.push({ action: 'failed', spec: spec.key, channel: spec.channel, error: res.message });
             continue;
         }
         if (res.value.entry.sha256 === current.value.sha256) {
             outcomes.push({
                 action: 'unchanged',
                 spec: spec.key,
+                channel: spec.channel,
                 sha256: current.value.sha256,
+                version: current.value.version,
             });
         }
         else {
@@ -491,6 +688,7 @@ export async function upgrade(specOrSpecs, options) {
             outcomes.push({
                 action: 'updated',
                 spec: spec.key,
+                channel: spec.channel,
                 fromSha: current.value.sha256,
                 toSha: res.value.entry.sha256,
                 fromVersion: current.value.version,
@@ -503,7 +701,7 @@ export async function upgrade(specOrSpecs, options) {
     return outcomes;
 }
 /**
- * Removes a module entry (or all refs with `allRefs`) and prunes empty parent directories.
+ * Removes a module entry (or all channels with `allChannels`) and prunes empty parent directories.
  * Refuses any deletion outside cache root.
  */
 export async function remove(spec, options) {
@@ -513,9 +711,9 @@ export async function remove(spec, options) {
     }
     const parsedSpec = specResult.value;
     const root = options?.root ?? cacheRoot();
-    const allRefs = options?.allRefs ?? false;
+    const allChannels = options?.allChannels ?? false;
     const absRoot = resolve(root);
-    if (allRefs) {
+    if (allChannels) {
         const ghRoot = resolve(absRoot, 'github.com');
         const repoDir = resolve(ghRoot, parsedSpec.owner, parsedSpec.repo);
         const relRoot = relative(absRoot, repoDir);

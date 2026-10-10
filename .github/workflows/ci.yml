@@ -41,13 +41,10 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Typecheck
-        run: bunx tsc --noEmit
-
       # Run directly (no pipe) so bun's exit code is the step's result; the conformance
       # suite itself fails in CI when the lmapi checkout is missing.
-      - name: Run tests with coverage
-        run: bun test --coverage
+      - name: Verify (typecheck and tests with coverage)
+        run: bun run verify
 
       - name: Build dist
         run: bun run build

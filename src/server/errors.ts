@@ -22,6 +22,7 @@ export enum ErrorCode {
   CommandFailed = 'COMMAND_FAILED',
   CommandNotFound = 'COMMAND_NOT_FOUND',
   MissingConfirmation = 'MISSING_CONFIRMATION',
+  UnsupportedProductVersion = 'UNSUPPORTED_PRODUCT_VERSION',
   ParseError = 'PARSE_ERROR',
   UnknownError = 'UNKNOWN_ERROR',
 }
@@ -40,6 +41,7 @@ export const EXIT_CODES: Record<ErrorCode, number> = {
   [ErrorCode.CommandFailed]: 1,
   [ErrorCode.CommandNotFound]: 127,
   [ErrorCode.MissingConfirmation]: 9,
+  [ErrorCode.UnsupportedProductVersion]: 10,
   [ErrorCode.ParseError]: 3,
   [ErrorCode.UnknownError]: 1,
 };

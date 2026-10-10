@@ -11,3 +11,5 @@ export * from './json-form.js';
 export * from './publish.js';
 export * from './help.js';
 export * from './encode.js';
+export * from './version.js';
+

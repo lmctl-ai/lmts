@@ -5,7 +5,7 @@
 import { accessSync, constants, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join, relative, resolve } from 'node:path';
-import type { ModuleSpec } from './types.js';
+import type { Channel, ModuleSpec } from './types.js';
 
 const TOOL_NAME_REGEX = /^[a-z][a-z0-9_]*$/;
 
@@ -14,22 +14,22 @@ const TOOL_NAME_REGEX = /^[a-z][a-z0-9_]*$/;
  * Defaults to `${LMCTL_HOME:-~/.lmctl}/modules`.
  */
 export function cacheRoot(env: Record<string, string | undefined> = process.env): string {
-  const lmctlHome = env.LMCTL_HOME && env.LMCTL_HOME.trim() !== ''
-    ? env.LMCTL_HOME
-    : join(env.HOME ?? homedir(), '.lmctl');
+  const lmctlHome =
+    env.LMCTL_HOME && env.LMCTL_HOME.trim() !== ''
+      ? env.LMCTL_HOME
+      : join(env.HOME ?? homedir(), '.lmctl');
   return join(lmctlHome, 'modules');
 }
 
 /**
  * Resolves the cache directory for a given module spec inside root.
- * Format: root/github.com/<owner>/<repo>/<encodeURIComponent(refOrHead)>
+ * Format: root/github.com/<owner>/<repo>/<channel>
  * Verifies that the resulting path does not escape the cache root.
  */
 export function entryDir(root: string, spec: ModuleSpec): string {
   const absRoot = resolve(root);
   const ghRoot = resolve(absRoot, 'github.com');
-  const encodedRef = encodeURIComponent(spec.refOrHead);
-  const dir = resolve(ghRoot, spec.owner, spec.repo, encodedRef);
+  const dir = resolve(ghRoot, spec.owner, spec.repo, spec.channel);
 
   const relRoot = relative(absRoot, dir);
   const relGh = relative(ghRoot, dir);
@@ -38,6 +38,13 @@ export function entryDir(root: string, spec: ModuleSpec): string {
   }
 
   return dir;
+}
+
+/**
+ * Returns the schema filename for a given channel: `cli.schema.<channel>.json`.
+ */
+export function schemaFileName(channel: Channel): string {
+  return `cli.schema.${channel}.json`;
 }
 
 /**

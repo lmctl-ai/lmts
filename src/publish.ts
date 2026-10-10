@@ -13,6 +13,7 @@ import type {
   ParamOccurs,
   ParamSpec,
   ParamType,
+  ProductInfo,
   PublishedCliSchema,
   Result,
   ValidationIssue,
@@ -21,6 +22,12 @@ import type {
 import { isReservedName } from './types.js';
 import { SchemaValidationError } from './validate.js';
 import { buildSynopsis, usageLine } from './synopsis.js';
+import {
+  countRegExpGroups,
+  isValidSupportedRange,
+  PRODUCT_ARGV0_REGEX,
+  PRODUCT_NAME_REGEX,
+} from './version.js';
 
 export type { PublishedCliSchema } from './types.js';
 
@@ -30,6 +37,7 @@ export interface PublishOptions {
   inputs?: Array<'flags' | 'json' | 'graphql'>;
   policy?: { dryrun: boolean; readonly: boolean };
   toolDescription?: string;
+  product?: ProductInfo;
 }
 
 /**
@@ -51,6 +59,9 @@ export function publishSchema(
   };
   if (opts?.globals !== undefined) {
     doc.globals = opts.globals;
+  }
+  if (opts?.product !== undefined) {
+    doc.product = opts.product;
   }
   return doc;
 }
@@ -511,6 +522,117 @@ export function parsePublishedSchema(value: unknown): Result<PublishedCliSchema>
       } else {
         for (const p of opObj['params']) {
           validateParamSpec(p, opName, false);
+        }
+      }
+    }
+  }
+
+  if (doc['product'] !== undefined) {
+    const rawProd = doc['product'];
+    if (rawProd === null || typeof rawProd !== 'object' || Array.isArray(rawProd)) {
+      addIssue('TYPE_MISMATCH', 'cli.schema.v1: product must be an object', {
+        received: rawProd,
+      });
+    } else {
+      const prodObj = rawProd as Record<string, unknown>;
+      const allowedProdKeys = new Set(['name', 'supported', 'detect']);
+      for (const k of Object.keys(prodObj)) {
+        if (!allowedProdKeys.has(k)) {
+          addIssue('UNKNOWN_PARAM', `cli.schema.v1: unknown product property "${k}"`, {
+            received: k,
+            allowed: Array.from(allowedProdKeys),
+          });
+        }
+      }
+
+      const pName = prodObj['name'];
+      if (typeof pName !== 'string') {
+        addIssue('TYPE_MISMATCH', 'cli.schema.v1: product.name must be a string', {
+          received: pName,
+        });
+      } else if (!PRODUCT_NAME_REGEX.test(pName)) {
+        addIssue(
+          'DOCUMENT_PARSE',
+          `cli.schema.v1: product.name must match ^[a-z][a-z0-9_.-]{0,63}$, received ${JSON.stringify(pName)}`,
+          { received: pName },
+        );
+      }
+
+      const pSupp = prodObj['supported'];
+      if (typeof pSupp !== 'string') {
+        addIssue('TYPE_MISMATCH', 'cli.schema.v1: product.supported must be a string', {
+          received: pSupp,
+        });
+      } else if (!isValidSupportedRange(pSupp)) {
+        addIssue(
+          'DOCUMENT_PARSE',
+          `cli.schema.v1: product.supported must be a conjunction of 1 to 4 comparators (>=, >, <=, <, = followed by numeric x.y.z), received ${JSON.stringify(pSupp)}`,
+          { received: pSupp },
+        );
+      }
+
+      if (prodObj['detect'] !== undefined) {
+        const rawDetect = prodObj['detect'];
+        if (rawDetect === null || typeof rawDetect !== 'object' || Array.isArray(rawDetect)) {
+          addIssue('TYPE_MISMATCH', 'cli.schema.v1: product.detect must be an object', {
+            received: rawDetect,
+          });
+        } else {
+          const detectObj = rawDetect as Record<string, unknown>;
+          const allowedDetectKeys = new Set(['argv', 'pattern']);
+          for (const k of Object.keys(detectObj)) {
+            if (!allowedDetectKeys.has(k)) {
+              addIssue('UNKNOWN_PARAM', `cli.schema.v1: unknown product.detect property "${k}"`, {
+                received: k,
+                allowed: Array.from(allowedDetectKeys),
+              });
+            }
+          }
+
+          const argv = detectObj['argv'];
+          if (
+            !Array.isArray(argv) ||
+            argv.length < 1 ||
+            argv.length > 8 ||
+            !argv.every((arg) => typeof arg === 'string' && arg.length > 0)
+          ) {
+            addIssue(
+              'DOCUMENT_PARSE',
+              'cli.schema.v1: product.detect.argv must be an array of 1 to 8 non-empty strings',
+              { received: argv },
+            );
+          } else {
+            const argv0 = argv[0]!;
+            if (!PRODUCT_ARGV0_REGEX.test(argv0)) {
+              addIssue(
+                'DOCUMENT_PARSE',
+                `cli.schema.v1: product.detect.argv[0] must match ^[a-z][a-z0-9_.-]*$ (no slashes), received ${JSON.stringify(argv0)}`,
+                { received: argv0 },
+              );
+            }
+          }
+
+          const pattern = detectObj['pattern'];
+          if (typeof pattern !== 'string') {
+            addIssue('TYPE_MISMATCH', 'cli.schema.v1: product.detect.pattern must be a string', {
+              received: pattern,
+            });
+          } else if (pattern.length > 200) {
+            addIssue(
+              'DOCUMENT_PARSE',
+              `cli.schema.v1: product.detect.pattern exceeds maximum length of 200 characters (${pattern.length})`,
+              { received: pattern },
+            );
+          } else {
+            const groupCount = countRegExpGroups(pattern);
+            if (groupCount !== 1) {
+              addIssue(
+                'DOCUMENT_PARSE',
+                `cli.schema.v1: product.detect.pattern must be a valid RegExp with exactly one capture group, found ${groupCount}`,
+                { received: pattern },
+              );
+            }
+          }
         }
       }
     }

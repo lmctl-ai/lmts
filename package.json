@@ -1,6 +1,6 @@
 {
   "name": "@lmctl-ai/lmts",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
@@ -34,7 +34,8 @@
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "test": "bun test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "verify": "tsc --noEmit && bun test --coverage"
   },
   "dependencies": {
     "cross-spawn": "^7.0.6"

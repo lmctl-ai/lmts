@@ -17,20 +17,25 @@ export function cacheRoot(env = process.env) {
 }
 /**
  * Resolves the cache directory for a given module spec inside root.
- * Format: root/github.com/<owner>/<repo>/<encodeURIComponent(refOrHead)>
+ * Format: root/github.com/<owner>/<repo>/<channel>
  * Verifies that the resulting path does not escape the cache root.
  */
 export function entryDir(root, spec) {
     const absRoot = resolve(root);
     const ghRoot = resolve(absRoot, 'github.com');
-    const encodedRef = encodeURIComponent(spec.refOrHead);
-    const dir = resolve(ghRoot, spec.owner, spec.repo, encodedRef);
+    const dir = resolve(ghRoot, spec.owner, spec.repo, spec.channel);
     const relRoot = relative(absRoot, dir);
     const relGh = relative(ghRoot, dir);
     if (relRoot.startsWith('..') || isAbsolute(relRoot) || relGh.startsWith('..') || isAbsolute(relGh)) {
         throw new Error(`Path traversal detected: entry directory "${dir}" escapes cache root "${absRoot}"`);
     }
     return dir;
+}
+/**
+ * Returns the schema filename for a given channel: `cli.schema.<channel>.json`.
+ */
+export function schemaFileName(channel) {
+    return `cli.schema.${channel}.json`;
 }
 /**
  * Searches absolute PATH entries for a regular executable file matching `name`.

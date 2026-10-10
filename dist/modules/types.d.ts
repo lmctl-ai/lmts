@@ -1,15 +1,15 @@
 /**
  * @fileoverview Type definitions for the lmapi module store (@lmctl-ai/lmts/modules).
- * Defines module specs, cache entries, outcomes, and Result types.
+ * Defines module specs, cache entries, outcomes, channels, and Result types.
  */
 import type { PublishedCliSchema } from '../types.js';
+export type Channel = 'latest' | 'dev';
 export interface ModuleSpec {
     owner: string;
     repo: string;
-    ref?: string;
-    refOrHead: string;
+    channel: Channel;
     key: string;
-    immutable: boolean;
+    requested: string;
 }
 export interface CachedModule {
     spec: ModuleSpec;
@@ -17,19 +17,22 @@ export interface CachedModule {
     path: string;
     sha256: string;
     fetchedAt: string;
+    lastChecked: string;
+    etag?: string;
+    channel: Channel;
     tool: string;
     version?: string;
     document: PublishedCliSchema;
 }
 export interface ModuleEntry {
     spec: string;
-    ref?: string;
+    channel?: Channel;
     tool?: string;
     version?: string;
     sha256?: string;
     fetchedAt?: string;
     dir: string;
-    immutable?: boolean;
+    binaryOnPath?: string | null;
     problem?: string;
 }
 export interface InstallOutcome {
@@ -39,11 +42,14 @@ export interface InstallOutcome {
 export interface UpgradeOutcomeUnchanged {
     action: 'unchanged';
     spec: string;
+    channel: Channel;
     sha256: string;
+    version?: string;
 }
 export interface UpgradeOutcomeUpdated {
     action: 'updated';
     spec: string;
+    channel: Channel;
     fromSha: string;
     toSha: string;
     fromVersion?: string;
@@ -51,23 +57,13 @@ export interface UpgradeOutcomeUpdated {
     operationsAdded: string[];
     operationsRemoved: string[];
 }
-export interface UpgradeOutcomeSkipped {
-    action: 'skipped';
-    spec: string;
-    reason: string;
-}
-export interface UpgradeOutcomeInstalled {
-    action: 'installed';
-    spec: string;
-    toSha: string;
-    toVersion?: string;
-}
 export interface UpgradeOutcomeFailed {
     action: 'failed';
     spec: string;
+    channel?: Channel;
     error: string;
 }
-export type UpgradeOutcome = UpgradeOutcomeUnchanged | UpgradeOutcomeUpdated | UpgradeOutcomeSkipped | UpgradeOutcomeInstalled | UpgradeOutcomeFailed;
+export type UpgradeOutcome = UpgradeOutcomeUnchanged | UpgradeOutcomeUpdated | UpgradeOutcomeFailed;
 export interface RemoveOutcome {
     removed: string[];
 }
@@ -108,18 +104,34 @@ export interface UpgradeOptions {
     root?: string;
     fetchImpl?: typeof fetch;
     now?: () => Date;
-    to?: string;
 }
 export interface RemoveOptions {
     root?: string;
-    allRefs?: boolean;
+    allChannels?: boolean;
+}
+export interface EnsureOutcome {
+    module: CachedModule;
+    source: 'cache' | 'network' | 'stale-cache' | 'installed';
+    warning?: string;
+}
+export interface EnsureOptions {
+    root?: string;
+    ttlMs?: number;
+    now?: () => Date;
+    fetchImpl?: typeof fetch;
+    install?: boolean;
+    update?: boolean;
+    timeoutMs?: number;
+    maxBytes?: number;
 }
 export interface MetaDocument {
     spec: string;
     url: string;
     sha256: string;
     fetched_at: string;
-    ref?: string;
+    last_checked: string;
+    etag?: string;
+    channel: Channel;
     tool: string;
     version?: string;
     bytes: number;
