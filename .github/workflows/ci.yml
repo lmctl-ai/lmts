@@ -72,6 +72,10 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
 
+      # A consumer has the production dependencies installed (only cross-spawn, for ./server).
+      - name: Install production dependencies
+        run: npm install --omit=dev --ignore-scripts --no-package-lock
+
       - name: Verify exports load in vanilla Node
         run: |
           node -e "import('./dist/index.js')"
