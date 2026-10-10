@@ -144,17 +144,15 @@ function defaultMatchesType(
   allowedEnum?: Array<string | number>,
 ): boolean {
   if (val === undefined) return true;
-  if (allowedEnum && allowedEnum.length > 0) {
-    if (!allowedEnum.includes(val as string | number)) {
-      return false;
-    }
-  }
+  // An enum constrains each value: every item of an array default, or the scalar default.
+  const inEnum = (v: unknown): boolean =>
+    !allowedEnum || allowedEnum.length === 0 || allowedEnum.includes(v as string | number);
   if (occurs === '+' || occurs === '*' || type === 'array') {
     if (!Array.isArray(val)) return false;
     const elemType = items ?? (type === 'array' ? 'string' : type);
-    return val.every((item) => defaultMatchesScalar(item, elemType as ParamType));
+    return val.every((item) => inEnum(item) && defaultMatchesScalar(item, elemType as ParamType));
   }
-  return defaultMatchesScalar(val, type);
+  return inEnum(val) && defaultMatchesScalar(val, type);
 }
 
 function defaultMatchesScalar(val: unknown, type: ParamType): boolean {

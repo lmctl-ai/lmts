@@ -62,6 +62,7 @@ Round-trip tested against server-side parsers to guarantee client-encoded inputs
 - **Returns**: operations optionally publish `returns?: 'object' | 'array' | 'string' | 'number' | 'boolean' | 'null'` (default `'object'`).
 - **Effectfulness**: `isEffectful(op)` determines if an operation modifies state. Returns `false` ONLY when `op.access === 'read'`. When `access` is omitted or undefined, operations are safely treated as effectful (`true`).
 - **Parameter attributes**: attributes `cliOnly`, `docOnly`, and `derived` exist in `ParamSpec` for metadata modeling, but no shipped schemas set them (all tool operations are fully authored).
+- **Defaults and enums**: a param `default` must match its type, and an `enum` constrains each value: the scalar default, or every item of an array default (`occurs` `+`/`*` or `type: 'array'`), e.g. `default: ['name', 'size']` with `enum: ['name', 'lastmod', 'size']`. A mismatch is `TYPE_MISMATCH` (lmapi conformance `publish/` vectors).
 - **Zero unknown param keys**: `parsePublishedSchema` strictly validates param properties; unknown keys (such as `min`, `max`, `conflicts`) produce validation issues.
 - **Linting / Warnings**: `schemaWarnings(doc)` detects missing descriptions or potential schema issues.
 - **Zero runtime dependencies**: Pure TypeScript with no external libraries.

@@ -95,18 +95,15 @@ const ALLOWED_PARAM_KEYS = new Set([
 function defaultMatchesType(val, type, items, occurs, allowedEnum) {
     if (val === undefined)
         return true;
-    if (allowedEnum && allowedEnum.length > 0) {
-        if (!allowedEnum.includes(val)) {
-            return false;
-        }
-    }
+    // An enum constrains each value: every item of an array default, or the scalar default.
+    const inEnum = (v) => !allowedEnum || allowedEnum.length === 0 || allowedEnum.includes(v);
     if (occurs === '+' || occurs === '*' || type === 'array') {
         if (!Array.isArray(val))
             return false;
         const elemType = items ?? (type === 'array' ? 'string' : type);
-        return val.every((item) => defaultMatchesScalar(item, elemType));
+        return val.every((item) => inEnum(item) && defaultMatchesScalar(item, elemType));
     }
-    return defaultMatchesScalar(val, type);
+    return inEnum(val) && defaultMatchesScalar(val, type);
 }
 function defaultMatchesScalar(val, type) {
     switch (type) {

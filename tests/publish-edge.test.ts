@@ -270,4 +270,30 @@ describe('synopsis.ts coverage helpers', () => {
     const pEnum: ParamSpec = { name: 'level', type: 'string', occurs: '?', enum: ['debug', 'info'] };
     expect(synopsisForParam(pEnum)).toContain('one of: debug, info');
   });
+
+  test('array param enum applies to each default item, not to the whole array', () => {
+    const doc = (param: Record<string, unknown>) => ({
+      schema: 'cli.schema.v1',
+      tool: 'probe',
+      policy: { dryrun: true, readonly: true },
+      inputs: ['flags', 'json'],
+      operations: [{ name: 'find', access: 'read', params: [param] }],
+    });
+    const cols = ['name', 'lastmod', 'size', 'type'];
+    // Valid: every item of the array default is in the enum (occurs * / + and type array).
+    expect(parsePublishedSchema(doc({ name: 'display', type: 'string', occurs: '*', enum: cols, default: ['name', 'size'] })).ok).toBe(true);
+    expect(parsePublishedSchema(doc({ name: 'display', type: 'string', occurs: '+', enum: cols, default: ['size'] })).ok).toBe(true);
+    expect(parsePublishedSchema(doc({ name: 'display', type: 'array', items: 'string', enum: cols, default: [] })).ok).toBe(true);
+    // Invalid: an item outside the enum is TYPE_MISMATCH, like a scalar default outside its enum.
+    for (const bad of [
+      { name: 'display', type: 'string', occurs: '*', enum: cols, default: ['name', 'owner'] },
+      { name: 'display', type: 'array', items: 'string', enum: cols, default: ['color'] },
+      { name: 'display', type: 'string', occurs: '?', enum: cols, default: 'owner' },
+      { name: 'display', type: 'string', occurs: '*', enum: cols, default: 'name' },
+    ]) {
+      const res = parsePublishedSchema(doc(bad));
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.issues.map((i) => i.code)).toEqual(['TYPE_MISMATCH']);
+    }
+  });
 });
