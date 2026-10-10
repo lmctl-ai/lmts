@@ -94,6 +94,7 @@ describe('dependency guards', () => {
     expect(visitedBasenames).not.toContain('argv-form.ts');
     expect(visitedBasenames).not.toContain('graphql-form.ts');
     expect(visitedBasenames).not.toContain('inputs.ts');
+    expect(visitedBasenames).not.toContain('interpret.ts');
     for (const visitedPath of visited) {
       expect(visitedPath).not.toContain('/server/');
     }

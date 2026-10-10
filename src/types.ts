@@ -91,7 +91,11 @@ export type ValidationIssueCode =
   | 'OP_MISMATCH'
   | 'MIXED_INPUT'
   | 'DUPLICATE_FLAG'
-  | 'RESERVED_NAME';
+  | 'RESERVED_NAME'
+  | 'SHELL_SYNTAX'
+  | 'UNKNOWN_TOOL'
+  | 'UNKNOWN_OPERATION'
+  | 'FLAG_BEFORE_OP';
 
 export interface ValidationIssue {
   code: ValidationIssueCode;
@@ -109,6 +113,17 @@ export interface ValidationIssue {
 
 export interface ValidationOptions {
   form?: 'flags' | 'json' | 'graphql';
+}
+
+export interface Interpreted {
+  tool: string;
+  op: string;
+  argv: string[];
+  params: Record<string, unknown>;
+  positionals: string[];
+  globals: Record<string, unknown>;
+  effect: 'read' | 'effectful';
+  access: 'read' | 'write' | 'dynamic' | undefined;
 }
 
 export type Result<T> = { ok: true; value: T } | { ok: false; issues: ValidationIssue[] };

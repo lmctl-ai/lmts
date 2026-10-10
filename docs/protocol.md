@@ -261,3 +261,59 @@ Client implementations (such as `@gitpoc/clischema/validate`) consume only the p
 3. Validate user inputs against declared `type`, `occurs`, and `enum` constraints before invoking the tool binary.
 4. Serialize input into either `--input-json` or CLI flags.
 5. Execute `<tool>` with serialized arguments and parse JSON output from stdout.
+
+---
+
+## 8. Interpreting an LLM-Produced Command Line
+
+When an LLM (brain) interacts with CLI tools (hands) through a text command line, the host runtime must validate and execute the call securely without shell evaluation.
+
+### 8.1. Tokenizer Grammar
+
+The tokenizer (`tokenizeSimpleCommand`) parses a single command line without invoking a shell:
+- **Single Quotes (`'...'`)**: Completely literal. No characters are escaped. Shell operators inside single quotes are treated as plain text.
+- **Double Quotes (`"..."`)**: Backslash escaping is permitted ONLY for `"` and `\`. Any occurrence of `$` (variable expansion or command substitution) or `` ` `` (backticks) inside double quotes is strictly refused (`SHELL_SYNTAX`).
+- **Outside Quotes**:
+  - Whitespace (` ` and `\t`) separates words.
+  - Backslash escapes spaces (`\ `), quotes, and backslashes.
+  - Adjacent quoted and unquoted fragments concatenate into a single token (e.g. `--message="hello "'world'` -> `--message=hello world`).
+  - Empty string quotes (`""` or `''`) emit distinct empty string tokens (`""`).
+
+### 8.2. Refusal Codes & Security Constraints
+
+The interpreter strictly refuses any shell features with specific issue codes:
+- **`SHELL_SYNTAX`**:
+  - Unquoted chaining and backgrounding operators: `;`, `&`, `&&`, `|`, `||`.
+  - Unquoted subshell and redirection operators: `<`, `>`, `>>`, `<<`, `(`, `)`, `{`, `}`.
+  - Unquoted expansion and substitutions: `$`, `$(...)`, `` `...` ``.
+  - Newlines and control characters: `\n`, `\r`, `\0`.
+  - Unquoted glob wildcards: `*`, `?`, `[`.
+  - Tilde expansion: A word starting with unquoted `~` (e.g. `~` or `~/path`). Note: `~` within a word (e.g. `HEAD~1`) is allowed.
+  - Shell comments: `#` starting a word. Note: `#` within a word (e.g. `issue#12`) is allowed.
+  - Leading environment variable assignments: First token matching `^[a-zA-Z_][a-zA-Z0-9_]*=`.
+  - Unterminated single or double quotes.
+- **`UNKNOWN_TOOL`**: First token does not match any registered schema's `tool` identifier. Returns known tool list and edit-distance suggestion (distance <= 2).
+- **`UNKNOWN_OPERATION`**: Second token does not match any operation name in the tool's schema. Returns available operations and edit-distance suggestion (distance <= 2).
+- **`FLAG_BEFORE_OP`**: A flag (e.g. `--schema` or `-h`) was supplied where an operation name was expected. Operations must precede flags.
+
+### 8.3. Effect Classification (`classifyOperation`)
+
+Operations are classified deterministically based on declared access:
+- **`'read'`**: Only when `op.access === 'read'`.
+- **`'effectful'`**: When `op.access` is `'write'`, `'dynamic'`, undefined, or omitted.
+
+**Safety Invariant**: A schema cannot upgrade itself to read-only. Dynamic access operations may perform state modifications depending on parameters, so they are always treated as effectful.
+
+### 8.4. Execution Model
+
+No shell process (`sh -c`, `bash -c`, or Windows `cmd.exe /c`) is ever invoked.
+The interpreter produces an `argv` array of strings:
+```typescript
+const result = interpretCommand(schemas, commandLine);
+if (result.ok) {
+  // Direct execution with array arguments — zero shell interpretation
+  const [binary, ...args] = result.value.argv;
+  spawn(binary, args);
+}
+```
+All arguments are passed directly to OS `execve` / `CreateProcess`, preventing command injection, argument splitting, or shell injection vulnerabilities.

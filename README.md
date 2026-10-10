@@ -35,6 +35,15 @@ Parameter occurrences follow regex-style cardinalities:
 
 Ranges, string limits, or business validation logic are intentionally excluded from the schema contract and handled in application logic.
 
+## LLM Command Interpreter & Safety Classifier
+
+When an LLM generates a single-line CLI command (e.g. `git2 commit --message "initial"`), the SDK provides a safe interpreter and classifier without invoking a shell:
+
+- **`tokenizeSimpleCommand(line)`**: Lexes command arguments following POSIX quoting rules (literal single quotes, double quotes with only `"` and `\` escaped). Rejects hostile shell constructs with code `SHELL_SYNTAX`: unquoted `;`, `&`, `|`, `<`, `>`, `(`, `)`, `{`, `}`, `$`, backticks, newlines, unquoted globs (`*`, `?`, `[`), tildes (`~`), `#` comments, and leading `NAME=value` env assignments.
+- **`interpretCommand(schemas, line, opts?)`**: Validates tool, operation, flags, and types against `PublishedCliSchema` documents. Extracts positionals, options, and global flags into null-prototype records without executing any shell process.
+- **`classifyOperation(op)`**: Returns `'read'` if and only if `op.access === 'read'`. Missing, write, and dynamic access are classified as `'effectful'`.
+- **`describeForPrompt(schemas)`**: Generates a compact, deterministic text description of available tools and operations formatted for LLM system prompts, complete with syntax rules.
+
 ## CLI Protocol & Contract
 
 Any CLI tool implementing the protocol (in TypeScript, Go, Rust, Python, etc.) must follow these core principles:
@@ -78,6 +87,7 @@ For a complete specification aimed at implementing tools in Go, Rust, or other l
 
 Further architectural decisions and internal invariants are documented in [`durable-memory/`](durable-memory/):
 - [`durable-memory/index.md`](durable-memory/index.md): Package architecture and client/server framing.
+- [`durable-memory/interpreter.md`](durable-memory/interpreter.md): Tokenizer grammar, command interpreter, safety classification, and LLM prompt rendering.
 - [`durable-memory/argv-form.md`](durable-memory/argv-form.md): Array-based flag parsing rules and regression controls.
 - [`durable-memory/server-runtime.md`](durable-memory/server-runtime.md): CLI runner execution flow and global dispatch.
 - [`durable-memory/policy.md`](durable-memory/policy.md): Dry-run, read-only, and confirmation policy model.
