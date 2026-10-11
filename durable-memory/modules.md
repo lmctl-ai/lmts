@@ -55,8 +55,11 @@ ${LMCTL_HOME:-~/.lmctl}/modules/
     └── <owner>/
         └── <repo>/
             └── <channel>/
-                ├── cli.schema.<channel>.json
-                └── meta.json
+                ├── CURRENT
+                └── generations/
+                    └── gen-<timestamp>-<uuid>/
+                        ├── cli.schema.<channel>.json
+                        └── meta.json
 ```
 
 ### Components:
@@ -74,7 +77,7 @@ ${LMCTL_HOME:-~/.lmctl}/modules/
 
 ## 4. On-Disk Artifacts & Permissions
 
-Each entry directory contains two files:
+Each immutable generation contains two files. `CURRENT` names the active generation; readers snapshot it once and read both files from that generation. Entries without `CURRENT` retain legacy fixed-file compatibility:
 
 1. **`cli.schema.<channel>.json`** (`cli.schema.latest.json` or `cli.schema.dev.json`):
    - The raw published schema document fetched from `https://raw.githubusercontent.com/<owner>/<repo>/HEAD/cli.schema.<channel>.json`.
@@ -111,12 +114,12 @@ Installation and upgrade operations follow strict safety guarantees:
    - Fetched content is parsed as JSON (`BAD_JSON` on parse failure).
    - The schema is validated via `parsePublishedSchema()`. Schemas with missing required fields, reserved names (`__proto__`, `constructor`, `prototype`), or invalid syntax are rejected.
 3. **Atomic Writes (`ATOMIC_WRITE_FAILED`)**:
-   - Files are written to unique temporary filenames in the destination directory:
-     - `.tmp.schema.<timestamp>.<uuid>`
-     - `.tmp.meta.<timestamp>.<uuid>`
-   - Once both files are successfully written, they are renamed to `cli.schema.<channel>.json` and `meta.json` via `fs.rename`.
-   - For 304 freshness updates, `meta.json` alone is rewritten atomically via `.tmp.meta.<timestamp>.<uuid>`.
-   - If an error occurs at any point, temporary files are removed (`safeUnlink`) and the cache entry is not left in a corrupt state.
+   - Schema and metadata are staged and renamed inside a new immutable generation directory.
+   - Only after both files are complete is a temporary pointer renamed to `CURRENT`.
+   - 304 freshness updates publish a complete generation too; existing reader snapshots remain valid.
+   - A failed write or publication leaves the previous pointer and generation intact. Temporary files are removed; abandoned generations remain.
+   - Malformed pointers, missing generations, and incomplete active generations return `CACHE_CORRUPT` without legacy fallback.
+
 
 ---
 
@@ -136,9 +139,9 @@ Installation and upgrade operations follow strict safety guarantees:
   - Checks existing cached entry and its age against `ttlMs` (default 6 hours).
   - Age < TTL: returns `{ source: 'cache', module }` immediately with zero network requests.
   - Age $\ge$ TTL and `update = true`: sends conditional GET (`If-None-Match: <etag>`) with 3 s timeout.
-    - `304 Not Modified`: atomically updates `last_checked` in `meta.json` and returns `{ source: 'network', module }`.
+    - `304 Not Modified`: publishes an immutable generation with updated `last_checked` and returns `{ source: 'network', module }`.
     - `200 OK`: validates schema, atomically replaces on-disk files, and returns `{ source: 'network', module }`.
-    - Any failure (network, timeout, HTTP error, bad JSON, invalid schema, write failure): falls back to the existing cached module returning `{ source: 'stale-cache', module, warning }`. On-disk files remain byte-identical.
+    - Any failure (network, timeout, HTTP error, bad JSON, invalid schema, write failure): falls back to the existing cached module returning `{ source: 'stale-cache', module, warning }`. The previous active generation remains byte-identical; failed writes can leave unreferenced generations.
   - `update = false`: returns cached module regardless of age without network (`source: 'cache'`).
   - Cache miss + `install = true`: calls `install()` and returns `{ source: 'installed', module }`.
   - Cache miss + `install = false`: returns `NOT_INSTALLED` error with `run: lmbee module install <key>`.
@@ -198,12 +201,8 @@ export type Result<T> =
 
 ## Known limitations (wiki: amend freely)
 
-- **Two-file entry is not one atomic unit.** `install` writes `cli.schema.v1.json` and then `meta.json`, each
-  atomically (temp + rename), but the pair is not. A process killed between the two renames, or a reader that
-  loads in that window during an upgrade, sees a hash mismatch and `resolveCached` returns `CACHE_CORRUPT`.
-  Recovery: `install --force` (or `remove` then `install`). A content-addressed layout (store the schema as
-  `<sha256>.json` and commit by renaming `meta.json` last) would remove the window; it changes the on-disk
-  layout documented in `lmapi/docs/distribution.md`, so it needs a layout version bump across SDKs.
+- **Generation retention:** old and abandoned generations are retained to keep reader snapshots valid. Garbage collection needs a reader-lifetime protocol and is outside this change. `remove` deletes the entry including generations.
+- **Mixed SDK versions:** older SDKs do not understand `CURRENT`. Legacy entries remain readable by the new SDK, but consumers sharing a cache must upgrade together before using generation entries.
 - **Redirects:** one same-host hop is followed; anything else is `FETCH_FAILED`.
 - **Local attackers:** the store trusts its own directory. A user who can write inside `~/.lmctl/modules`
   can already run code as that user, so symlink games inside the cache are out of scope.

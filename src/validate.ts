@@ -15,6 +15,9 @@ import type {
 import { isReservedName } from './types.js';
 import { buildSynopsis, isRequired, toCamel, toKebab, usageLine } from './synopsis.js';
 
+const hasOwn = (value: object, key: PropertyKey): boolean =>
+  Object.prototype.hasOwnProperty.call(value, key);
+
 export class SchemaValidationError extends Error {
   constructor(
     public readonly operation: string,
@@ -225,11 +228,14 @@ export function validate(
       continue;
     }
     const synopsis = buildSynopsis(spec);
-    let value = raw[spec.name];
-    if (value === undefined && spec.aliases) {
+    let value: unknown;
+    let supplied = hasOwn(raw, spec.name);
+    if (supplied) value = raw[spec.name];
+    if ((!supplied || value === undefined) && spec.aliases) {
       for (const alias of spec.aliases) {
-        if (raw[alias] !== undefined) {
+        if (hasOwn(raw, alias) && raw[alias] !== undefined) {
           value = raw[alias];
+          supplied = true;
           break;
         }
       }

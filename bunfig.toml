@@ -1,3 +1,5 @@
 [test]
 coverage = true
 coverageThreshold = { lines = 0.9, functions = 0.9 }
+# Node regression tests import generated dist; measure coverage on source only.
+coveragePathIgnorePatterns = ["dist/**"]

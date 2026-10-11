@@ -10,7 +10,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, promises as fs } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import {
   ensure,
   entryDir,
@@ -70,6 +70,12 @@ function createMockFetch(
     const url = typeof input === 'string' ? input : input.url;
     return handler(url, init);
   }) as unknown as typeof fetch;
+}
+
+async function cachedDir(root: string): Promise<string> {
+  const cached = await resolveCached('@owner/repo#latest', { root });
+  if (!cached.ok) throw new Error(cached.message);
+  return dirname(cached.value.path);
 }
 
 describe('Module Store: ensure()', () => {
@@ -152,7 +158,7 @@ describe('Module Store: ensure()', () => {
 
     const spec = parseSpec('@owner/repo#latest');
     if (!spec.ok) throw new Error('parseSpec failed');
-    const dir = entryDir(tempRoot, spec.value);
+    const dir = await cachedDir(tempRoot);
     const schemaPath = join(dir, 'cli.schema.latest.json');
     const schemaBytesBefore = readFileSync(schemaPath);
 
@@ -185,7 +191,7 @@ describe('Module Store: ensure()', () => {
     expect(schemaBytesAfter).toEqual(schemaBytesBefore);
 
     // Meta file has updated last_checked
-    const metaText = readFileSync(join(dir, 'meta.json'), 'utf-8');
+    const metaText = readFileSync(join(dirname(res.value.module.path), 'meta.json'), 'utf-8');
     const parsedMeta = JSON.parse(metaText);
     expect(parsedMeta.last_checked).toBe(t1.toISOString());
     expect(parsedMeta.etag).toBe('"etag-v1-refreshed"');
@@ -235,7 +241,7 @@ describe('Module Store: ensure()', () => {
 
     const spec = parseSpec('@owner/repo#latest');
     if (!spec.ok) throw new Error('parseSpec failed');
-    const dir = entryDir(tempRoot, spec.value);
+    const dir = await cachedDir(tempRoot);
     const schemaPath = join(dir, 'cli.schema.latest.json');
     const metaPath = join(dir, 'meta.json');
     const schemaBefore = readFileSync(schemaPath, 'utf-8');
@@ -456,7 +462,7 @@ describe('Module Store: ensure()', () => {
     // Manually set last_checked to a future time
     const spec = parseSpec('@owner/repo#latest');
     if (!spec.ok) throw new Error('parseSpec failed');
-    const dir = entryDir(tempRoot, spec.value);
+    const dir = await cachedDir(tempRoot);
     const meta = JSON.parse(readFileSync(join(dir, 'meta.json'), 'utf-8'));
     meta.last_checked = '2026-10-10T23:59:59.000Z';
     writeFileSync(join(dir, 'meta.json'), JSON.stringify(meta));
@@ -489,7 +495,7 @@ describe('Module Store: ensure()', () => {
 
     const spec = parseSpec('@owner/repo#latest');
     if (!spec.ok) throw new Error('parseSpec failed');
-    const dir = entryDir(tempRoot, spec.value);
+    const dir = await cachedDir(tempRoot);
     const meta = JSON.parse(readFileSync(join(dir, 'meta.json'), 'utf-8'));
     delete meta.last_checked;
     delete meta.fetched_at;
@@ -573,7 +579,7 @@ describe('Module Store: ensure()', () => {
 
     const spec = parseSpec('@owner/repo#latest');
     if (!spec.ok) throw new Error('parseSpec failed');
-    const dir = entryDir(tempRoot, spec.value);
+    const dir = await cachedDir(tempRoot);
     // Tamper with the schema file
     writeFileSync(join(dir, 'cli.schema.latest.json'), 'tampered');
 
@@ -603,13 +609,14 @@ describe('Module Store: ensure()', () => {
 
     const spec = parseSpec('@owner/repo#latest');
     if (!spec.ok) throw new Error('parseSpec failed');
-    const dir = entryDir(tempRoot, spec.value);
+    const dir = await cachedDir(tempRoot);
     const schemaPath = join(dir, 'cli.schema.latest.json');
     const schemaBefore = readFileSync(schemaPath, 'utf-8');
 
-    // Make directory read-only to simulate write failure (on POSIX)
+    const entry = entryDir(tempRoot, spec.value);
+    // Make the CURRENT parent read-only to simulate publication failure (on POSIX)
     if (process.platform !== 'win32') {
-      await fs.chmod(dir, 0o500);
+      await fs.chmod(entry, 0o500);
     }
 
     try {
@@ -629,7 +636,7 @@ describe('Module Store: ensure()', () => {
       }
     } finally {
       if (process.platform !== 'win32') {
-        await fs.chmod(dir, 0o700);
+        await fs.chmod(entry, 0o700);
       }
     }
 

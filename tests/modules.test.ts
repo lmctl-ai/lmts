@@ -472,15 +472,15 @@ describe('Module Store: install', () => {
     expect(res.value.entry.fetchedAt).toBe(fixedDate.toISOString());
 
     const dir = res.value.entry.dir;
-    expect(existsSync(join(dir, 'cli.schema.dev.json'))).toBe(true);
-    expect(existsSync(join(dir, 'meta.json'))).toBe(true);
+    expect(existsSync(res.value.entry.path)).toBe(true);
+    expect(existsSync(join(dirname(res.value.entry.path), 'meta.json'))).toBe(true);
 
     // Verify permissions on POSIX
     if (process.platform !== 'win32') {
       const dirStat = statSync(dir);
       expect(dirStat.mode & 0o777).toBe(0o700);
 
-      const fileStat = statSync(join(dir, 'cli.schema.dev.json'));
+      const fileStat = statSync(res.value.entry.path);
       expect(fileStat.mode & 0o777).toBe(0o600);
     }
   });

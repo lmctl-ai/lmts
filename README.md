@@ -157,8 +157,8 @@ const binaryPath = findOnPath('lmgit');
 | Cache State | Age vs TTL | Network Response | Result Source | Disk Action |
 | :--- | :--- | :--- | :--- | :--- |
 | Present | Age < TTL | *(No network request)* | `'cache'` | None (fast path) |
-| Present | Age $\ge$ TTL | `304 Not Modified` | `'network'` | Atomically bump `last_checked` in `meta.json` |
-| Present | Age $\ge$ TTL | `200 OK` (valid schema) | `'network'` | Atomically replace schema and `meta.json` |
+| Present | Age $\ge$ TTL | `304 Not Modified` | `'network'` | Publish a complete generation with updated `last_checked` |
+| Present | Age $\ge$ TTL | `200 OK` (valid schema) | `'network'` | Publish a complete schema/metadata generation |
 | Present | Age $\ge$ TTL | Error / timeout / 4xx / 5xx / invalid | `'stale-cache'` | Unmodified (returns warning, preserves files) |
 | Present | *(Any age)* | `update: false` | `'cache'` | None (offline mode) |
 | Missing | N/A | `install: true` (default) | `'installed'` | Atomically install new cache entry |
@@ -167,7 +167,7 @@ const binaryPath = findOnPath('lmgit');
 
 Key guarantees:
 - **Streaming Byte Cap**: Enforces a 2 MiB limit (`OUTPUT_LIMIT`) on fetched schemas to prevent runaway resource consumption.
-- **Atomic Cache Operations**: Files are staged in temporary files and renamed atomically into place with `0700` directory and `0600` file permissions.
+- **Atomic Cache Operations**: Schema and metadata are stored in immutable generations, published by an atomic `CURRENT` pointer rename with `0700` directory and `0600` file permissions. Readers retain a consistent snapshot; legacy fixed-file entries remain readable. Old generations are retained until removal.
 - **Tamper Detection**: Every cached schema is verified against its recorded SHA-256 hash in `meta.json` before being returned by `resolveCached` or `ensure`.
 - **Path Traversal Protection**: Spec parsing and path resolution strictly forbid directory traversal (`..`) and escape from the cache root.
 

@@ -12,7 +12,7 @@ export declare function resolveCached(spec: ModuleSpec | string, options?: Resol
 /**
  * Ensures an evergreen module is cached and sufficiently fresh.
  * Younger than TTL -> uses cache directly without network.
- * Stale + update=true -> conditional GET (304: touch meta.json, 200: atomic replace, failure: stale fallback).
+ * Stale + update=true -> conditional GET (304/200: publish a complete generation, failure: stale fallback).
  * Missing + install=true -> downloads and caches.
  */
 export declare function ensure(spec: ModuleSpec | string, options?: EnsureOptions): Promise<Result<EnsureOutcome>>;

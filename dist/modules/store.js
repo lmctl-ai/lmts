@@ -12,6 +12,25 @@ import { err, ok, } from './types.js';
 const GITHUB_RAW_BASE = 'https://raw.githubusercontent.com';
 const SEGMENT_REGEX = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const MAX_SCHEMA_BYTES = 2 * 1024 * 1024; // 2 MiB default cap
+const CURRENT_FILE = 'CURRENT';
+async function activeEntryDir(dir) {
+    const currentPath = join(dir, CURRENT_FILE);
+    if (!existsSync(currentPath))
+        return ok(dir);
+    try {
+        const generation = (await fs.readFile(currentPath, 'utf8')).trim();
+        if (!SEGMENT_REGEX.test(generation) || generation === '.' || generation === '..') {
+            return err('CACHE_CORRUPT', `Invalid ${currentPath}`);
+        }
+        const generationDir = join(dir, 'generations', generation);
+        if (!existsSync(generationDir))
+            return err('CACHE_CORRUPT', `Missing cache generation ${generation}`);
+        return ok(generationDir);
+    }
+    catch (e) {
+        return err('CACHE_CORRUPT', `Failed to read ${currentPath}: ${e?.message ?? String(e)}`);
+    }
+}
 function normalizeSpec(spec) {
     if (typeof spec === 'string') {
         return parseSpec(spec);
@@ -38,10 +57,14 @@ export async function resolveCached(spec, options) {
         return err('PATH_TRAVERSAL', e?.message ?? String(e));
     }
     const sFileName = schemaFileName(parsedSpec.channel);
-    const schemaPath = join(dir, sFileName);
-    const metaPath = join(dir, 'meta.json');
+    const active = await activeEntryDir(dir);
+    if (!active.ok)
+        return active;
+    const entryDirPath = active.value;
+    const schemaPath = join(entryDirPath, sFileName);
+    const metaPath = join(entryDirPath, 'meta.json');
     if (!existsSync(schemaPath) || !existsSync(metaPath)) {
-        return err('NOT_INSTALLED', `Module ${parsedSpec.key} is not installed`);
+        return err(entryDirPath === dir ? 'NOT_INSTALLED' : 'CACHE_CORRUPT', `Module ${parsedSpec.key} is missing cache files`);
     }
     let schemaBytes;
     let meta;
@@ -188,47 +211,36 @@ async function readAndValidatePayload(response, maxBytes, timeoutMs, specKey, fi
  * Atomically writes both the schema file and meta.json with restrictive permissions (0700/0600).
  */
 async function atomicWriteEntry(dir, sFileName, buffer, metaDoc) {
-    await fs.mkdir(dir, { recursive: true, mode: 0o700 });
-    const tempSchema = join(dir, `.tmp.schema.${Date.now()}.${randomUUID()}`);
-    const tempMeta = join(dir, `.tmp.meta.${Date.now()}.${randomUUID()}`);
-    const targetSchema = join(dir, sFileName);
-    const targetMeta = join(dir, 'meta.json');
+    const generation = `gen-${Date.now()}-${randomUUID()}`;
+    const generationDir = join(dir, 'generations', generation);
+    const tempSchema = join(generationDir, `.tmp.schema.${randomUUID()}`);
+    const tempMeta = join(generationDir, `.tmp.meta.${randomUUID()}`);
+    const targetSchema = join(generationDir, sFileName);
+    const targetMeta = join(generationDir, 'meta.json');
+    const tempCurrent = join(dir, `.tmp.current.${randomUUID()}`);
     try {
+        await fs.mkdir(generationDir, { recursive: true, mode: 0o700 });
         await fs.writeFile(tempSchema, buffer, { mode: 0o600 });
         await fs.rename(tempSchema, targetSchema);
         await safeChmod(targetSchema, 0o600);
         await fs.writeFile(tempMeta, JSON.stringify(metaDoc, null, 2) + '\n', { mode: 0o600 });
         await fs.rename(tempMeta, targetMeta);
         await safeChmod(targetMeta, 0o600);
+        await fs.writeFile(tempCurrent, generation + '\n', { mode: 0o600 });
+        await fs.rename(tempCurrent, join(dir, CURRENT_FILE));
     }
     catch (e) {
         await safeUnlink(tempSchema);
         await safeUnlink(tempMeta);
+        await safeUnlink(tempCurrent);
         return err('ATOMIC_WRITE_FAILED', `Failed to write cached module files: ${e?.message ?? String(e)}`);
-    }
-    return ok(undefined);
-}
-/**
- * Atomically writes meta.json only (e.g. for 304 freshness updates).
- */
-async function atomicWriteMeta(dir, metaDoc) {
-    const tempMeta = join(dir, `.tmp.meta.${Date.now()}.${randomUUID()}`);
-    const targetMeta = join(dir, 'meta.json');
-    try {
-        await fs.writeFile(tempMeta, JSON.stringify(metaDoc, null, 2) + '\n', { mode: 0o600 });
-        await fs.rename(tempMeta, targetMeta);
-        await safeChmod(targetMeta, 0o600);
-    }
-    catch (e) {
-        await safeUnlink(tempMeta);
-        return err('ATOMIC_WRITE_FAILED', `Failed to write meta.json: ${e?.message ?? String(e)}`);
     }
     return ok(undefined);
 }
 /**
  * Ensures an evergreen module is cached and sufficiently fresh.
  * Younger than TTL -> uses cache directly without network.
- * Stale + update=true -> conditional GET (304: touch meta.json, 200: atomic replace, failure: stale fallback).
+ * Stale + update=true -> conditional GET (304/200: publish a complete generation, failure: stale fallback).
  * Missing + install=true -> downloads and caches.
  */
 export async function ensure(spec, options) {
@@ -309,12 +321,12 @@ export async function ensure(spec, options) {
     if (response.status === 304) {
         const newLastChecked = now().toISOString();
         const newEtag = response.headers.get('etag') ?? response.headers.get('ETag') ?? currentModule.etag;
-        let byteSize = 0;
+        let schemaBytes;
         try {
-            byteSize = (await fs.stat(currentModule.path)).size;
+            schemaBytes = await fs.readFile(currentModule.path);
         }
-        catch {
-            byteSize = 0;
+        catch (e) {
+            return ok({ module: currentModule, source: 'stale-cache', warning: `Failed to read cached schema: ${e?.message ?? String(e)}` });
         }
         const metaDoc = {
             spec: parsedSpec.key,
@@ -326,9 +338,9 @@ export async function ensure(spec, options) {
             channel: parsedSpec.channel,
             tool: currentModule.tool,
             version: currentModule.version,
-            bytes: byteSize,
+            bytes: schemaBytes.length,
         };
-        const writeMetaRes = await atomicWriteMeta(currentModule.dir, metaDoc);
+        const writeMetaRes = await atomicWriteEntry(currentModule.dir, sFileName, schemaBytes, metaDoc);
         if (!writeMetaRes.ok) {
             return ok({
                 module: currentModule,
@@ -336,13 +348,11 @@ export async function ensure(spec, options) {
                 warning: writeMetaRes.message,
             });
         }
-        const updatedModule = {
-            ...currentModule,
-            lastChecked: newLastChecked,
-            etag: newEtag,
-        };
+        const committed = await resolveCached(parsedSpec, { root });
+        if (!committed.ok)
+            return ok({ module: currentModule, source: 'stale-cache', warning: committed.message });
         return ok({
-            module: updatedModule,
+            module: committed.value,
             source: 'network',
         });
     }
@@ -385,21 +395,11 @@ export async function ensure(spec, options) {
             warning: writeRes.message,
         });
     }
-    const newModule = {
-        spec: parsedSpec,
-        dir: currentModule.dir,
-        path: currentModule.path,
-        sha256,
-        fetchedAt,
-        lastChecked,
-        etag: responseEtag,
-        channel: parsedSpec.channel,
-        tool: schema.tool,
-        version: schema.version,
-        document: schema,
-    };
+    const committed = await resolveCached(parsedSpec, { root });
+    if (!committed.ok)
+        return ok({ module: currentModule, source: 'stale-cache', warning: committed.message });
     return ok({
-        module: newModule,
+        module: committed.value,
         source: 'network',
     });
 }
@@ -482,22 +482,12 @@ export async function install(spec, options) {
     if (!writeRes.ok) {
         return writeRes;
     }
-    const entry = {
-        spec: parsedSpec,
-        dir,
-        path: join(dir, sFileName),
-        sha256,
-        fetchedAt,
-        lastChecked,
-        etag: responseEtag,
-        channel: parsedSpec.channel,
-        tool: schema.tool,
-        version: schema.version,
-        document: schema,
-    };
+    const entry = await resolveCached(parsedSpec, { root });
+    if (!entry.ok)
+        return entry;
     return ok({
         action: prior.ok ? 'replaced' : 'installed',
-        entry,
+        entry: entry.value,
     });
 }
 /**
@@ -569,8 +559,14 @@ export async function list(options) {
                 const isKnownChannel = channelName === 'latest' || channelName === 'dev';
                 const channel = isKnownChannel ? channelName : undefined;
                 const sFileName = channel ? schemaFileName(channel) : `cli.schema.${channelName}.json`;
-                const schemaFile = join(dir, sFileName);
-                const metaFile = join(dir, 'meta.json');
+                const active = await activeEntryDir(dir);
+                if (!active.ok) {
+                    entries.push({ spec: specKey, channel, dir, problem: active.message });
+                    continue;
+                }
+                const entryDirPath = active.value;
+                const schemaFile = join(entryDirPath, sFileName);
+                const metaFile = join(entryDirPath, 'meta.json');
                 if (!existsSync(schemaFile) || !existsSync(metaFile)) {
                     entries.push({
                         spec: specKey,
