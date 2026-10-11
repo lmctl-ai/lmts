@@ -39,7 +39,8 @@ function argvValue(type: ParamSpec['type'], value: unknown): string {
 /**
  * Encode params as an argv array (op name not included). Values always use
  * the `--k=v` form so a value may start with '-' or contain anything.
- * Booleans use `--k` / `--no-k`; multi params repeat the flag.
+ * Booleans use `--k` / `--no-k`; multi params repeat the flag. With
+ * `positional`, positional params follow a `--` in schema order.
  */
 export function encodeArgv(
   schema: OperationSchema,
@@ -47,8 +48,11 @@ export function encodeArgv(
   opts: EncodeArgvOptions = {},
 ): string[] {
   const out: string[] = [];
-  const trailing: string[] = [];
+  // Values of each positional param by schema index: emitted in schema order (the order the
+  // runner assigns positionals in), whatever the key order of `params`.
+  const trailing: Array<{ index: number; values: string[] }> = [];
   const specs = new Map(schema.params.map((p) => [p.name, p]));
+  const indexOf = new Map(schema.params.map((p, i) => [p.name, i]));
 
   for (const [name, value] of Object.entries(params)) {
     if (value === undefined) continue;
@@ -59,7 +63,8 @@ export function encodeArgv(
 
     if (opts.positional && spec.positional === true) {
       const items = isMulti(spec) && Array.isArray(value) ? value : [value];
-      for (const v of items) trailing.push(argvValue(type, v));
+      const index = indexOf.get(name) ?? Number.MAX_SAFE_INTEGER;
+      trailing.push({ index, values: items.map((v) => argvValue(type, v)) });
       continue;
     }
     if (isMulti(spec) && Array.isArray(value)) {
@@ -73,7 +78,10 @@ export function encodeArgv(
     }
     out.push(`${flag}=${argvValue(type, value)}`);
   }
-  if (trailing.length > 0) out.push('--', ...trailing);
+  if (trailing.length > 0) {
+    trailing.sort((a, b) => a.index - b.index);
+    out.push('--', ...trailing.flatMap((t) => t.values));
+  }
   return out;
 }
 

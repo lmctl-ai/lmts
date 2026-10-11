@@ -47,7 +47,7 @@ Cardinality is regex-style and nothing finer:
 ## Encoders & Round-Trip
 
 `encode.ts` provides client-side serialization:
-- `encodeArgv(schema, params)` -> string[]
+- `encodeArgv(schema, params, { positional })` -> string[] (with `positional`, positional params follow `--` in schema order, not key order; lmapi conformance `encode/`)
 - `encodeJson(schema, params, opts)` -> string
 - `encodeGraphql(schema, params)` -> string
 Round-trip tested against server-side parsers to guarantee client-encoded inputs parse back to identical structures.

@@ -8,9 +8,11 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import {
   describeForPrompt,
+  encodeArgv,
   interpretCommand,
   parseArgvForm,
   parsePublishedSchema,
+  resolveInput,
   validate,
   type OperationSchema,
   type ParamSpec,
@@ -246,7 +248,37 @@ describe('conformance vectors (lmapi)', () => {
     }
   }
 
-  // 6. Spec vectors
+  // 6. Encode vectors: tokens after `--` compared exactly (schema order), named flags before it
+  // as a multiset (their order follows the params object); the argv resolves back to the params.
+  const encodeDir = resolve(CONFORMANCE_DIR, 'encode');
+  if (existsSync(encodeDir)) {
+    const files = readdirSync(encodeDir).filter((f) => f.endsWith('.json'));
+    for (const file of files) {
+      const content = JSON.parse(readFileSync(resolve(encodeDir, file), 'utf-8'));
+      const cases: any[] = content.cases ?? (Array.isArray(content) ? content : [content]);
+
+      describe(`encode/${file}`, () => {
+        for (const tc of cases) {
+          test(tc.name, () => {
+            const schema: OperationSchema = tc.schema;
+            const argv = encodeArgv(schema, tc.params, { positional: tc.options?.positional === true });
+            const split = (a: string[]) => {
+              const i = a.indexOf('--');
+              return i < 0 ? { named: [...a], rest: [] as string[] } : { named: a.slice(0, i), rest: a.slice(i + 1) };
+            };
+            const got = split(argv);
+            const want = split(tc.expect.argv);
+            expect([...got.named].sort()).toEqual([...want.named].sort());
+            expect(got.rest).toEqual(want.rest);
+            expect(argv.includes('--')).toBe(tc.expect.argv.includes('--'));
+            expect(resolveInput({ schema, argv }).params).toEqual(tc.params);
+          });
+        }
+      });
+    }
+  }
+
+  // 7. Spec vectors
   const specDir = resolve(CONFORMANCE_DIR, 'spec');
   if (existsSync(specDir)) {
     const files = readdirSync(specDir).filter((f) => f.endsWith('.json'));

@@ -97,3 +97,46 @@ describe('encodeGraphql -> parseGraphqlInput', () => {
     expect(() => encodeGraphql(SCHEMA, { limit: Number.NaN })).toThrow();
   });
 });
+
+// Positionals are emitted in schema order (the order the runner assigns them in), whatever the
+// key order of the params object.
+describe('encodeArgv positional order', () => {
+  const positional = (...names: string[]): OperationSchema => ({
+    name: 'op',
+    params: names.map((name) => ({ name, type: 'string', positional: true })),
+  });
+
+  test('reverse-key params follow schema order', () => {
+    const schema = positional('symbol', 'path');
+    const argv = encodeArgv(schema, { path: 'src', symbol: 'Parser' }, { positional: true });
+    expect(argv).toEqual(['--', 'Parser', 'src']);
+    const back = parseArgvForm(argv, schema);
+    expect(back.ok && back.value.positionals).toEqual(['Parser', 'src']);
+  });
+
+  test('sorted-key, schema-order and shuffled params all encode in schema order', () => {
+    const two = positional('alpha', 'beta');
+    expect(encodeArgv(two, { beta: '2', alpha: '1' }, { positional: true })).toEqual(['--', '1', '2']);
+    expect(encodeArgv(two, { alpha: '1', beta: '2' }, { positional: true })).toEqual(['--', '1', '2']);
+    const three = positional('mode', 'from', 'to');
+    expect(encodeArgv(three, { to: 'c', mode: 'a', from: 'b' }, { positional: true })).toEqual([
+      '--',
+      'a',
+      'b',
+      'c',
+    ]);
+  });
+
+  test('a variadic positional expands after the single ones; named flags stay first', () => {
+    const schema: OperationSchema = {
+      name: 'grep',
+      params: [
+        { name: 'pattern', type: 'string', positional: true },
+        { name: 'limit', type: 'number', occurs: '?' },
+        { name: 'paths', type: 'array', items: 'string', occurs: '*', positional: true },
+      ],
+    };
+    const argv = encodeArgv(schema, { paths: ['src', 'tests'], limit: 5, pattern: '-x' }, { positional: true });
+    expect(argv).toEqual(['--limit=5', '--', '-x', 'src', 'tests']);
+  });
+});

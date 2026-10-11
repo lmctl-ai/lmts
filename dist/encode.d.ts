@@ -17,7 +17,8 @@ export interface EncodeArgvOptions {
 /**
  * Encode params as an argv array (op name not included). Values always use
  * the `--k=v` form so a value may start with '-' or contain anything.
- * Booleans use `--k` / `--no-k`; multi params repeat the flag.
+ * Booleans use `--k` / `--no-k`; multi params repeat the flag. With
+ * `positional`, positional params follow a `--` in schema order.
  */
 export declare function encodeArgv(schema: OperationSchema, params: Record<string, unknown>, opts?: EncodeArgvOptions): string[];
 /** Encode as a JSON envelope `{"op": name, "params": {...}}`. */
